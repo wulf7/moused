@@ -157,21 +157,6 @@ typedef struct {
     int val2;
 } symtab_t;
 
-/* serial PnP ID string */
-typedef struct {
-    int revision;	/* PnP revision, 100 for 1.00 */
-    const char *eisaid;	/* EISA ID including mfr ID and product ID */
-    char *serial;	/* serial No, optional */
-    const char *class;	/* device class, optional */
-    char *compat;	/* list of compatible drivers, optional */
-    char *description;	/* product description, optional */
-    int neisaid;	/* length of the above fields... */
-    int nserial;
-    int nclass;
-    int ncompat;
-    int ndescription;
-} pnpid_t;
-
 /* global variables */
 
 static int	debug = 0;
