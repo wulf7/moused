@@ -106,10 +106,10 @@ __FBSDID("$FreeBSD$");
 
 #define ID_NONE		0
 #define ID_PORT		1
-#define ID_IF		2
+/* Was	ID_IF		2 */
 #define ID_TYPE		4
 #define ID_MODEL	8
-#define ID_ALL		(ID_PORT | ID_IF | ID_TYPE | ID_MODEL)
+#define ID_ALL		(ID_PORT | ID_TYPE | ID_MODEL)
 
 /* Operations on timespecs */
 #define	tsclr(tvp)	((tvp)->tv_sec = (tvp)->tv_nsec = 0)
@@ -227,27 +227,6 @@ static const char *rnames[] = {
     NULL
 };
 
-/* models */
-static symtab_t	rmodels[] = {
-    { "NetScroll",		MOUSE_MODEL_NETSCROLL,		0 },
-    { "NetMouse/NetScroll Optical", MOUSE_MODEL_NET,		0 },
-    { "GlidePoint",		MOUSE_MODEL_GLIDEPOINT,		0 },
-    { "ThinkingMouse",		MOUSE_MODEL_THINK,		0 },
-    { "IntelliMouse",		MOUSE_MODEL_INTELLI,		0 },
-    { "EasyScroll/SmartScroll",	MOUSE_MODEL_EASYSCROLL,		0 },
-    { "MouseMan+",		MOUSE_MODEL_MOUSEMANPLUS,	0 },
-    { "Kidspad",		MOUSE_MODEL_KIDSPAD,		0 },
-    { "VersaPad",		MOUSE_MODEL_VERSAPAD,		0 },
-    { "IntelliMouse Explorer",	MOUSE_MODEL_EXPLORER,		0 },
-    { "4D Mouse",		MOUSE_MODEL_4D,			0 },
-    { "4D+ Mouse",		MOUSE_MODEL_4DPLUS,		0 },
-    { "Synaptics Touchpad",	MOUSE_MODEL_SYNAPTICS,		0 },
-    { "TrackPoint",		MOUSE_MODEL_TRACKPOINT,		0 },
-    { "Elantech Touchpad",	MOUSE_MODEL_ELANTECH,		0 },
-    { "generic",		MOUSE_MODEL_GENERIC,		0 },
-    { NULL,			MOUSE_MODEL_UNKNOWN,		0 },
-};
-
 static struct rodentparam {
     int flags;
     const char *portname;	/* /dev/XXX */
@@ -258,7 +237,7 @@ static struct rodentparam {
     int cfd;			/* /dev/consolectl file descriptor */
     long clickthreshold;	/* double click speed in msec */
     long button2timeout;	/* 3 button emulation timeout */
-    mousehw_t hw;		/* mouse device hardware information */
+    char model[80];		/* mouse name */
     float accelx;		/* Acceleration in the X axis */
     float accely;		/* Acceleration in the Y axis */
     float expoaccel;		/* Exponential acceleration */
@@ -380,9 +359,7 @@ static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 		    __printflike(3, 4);
 
 static int	r_identify(void);
-static const char *r_if(int type);
 static const char *r_name(int type);
-static const char *r_model(int model);
 static void	r_init(void);
 static int	r_protocol(int rtype, struct input_event *b, mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
@@ -391,9 +368,6 @@ static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
 static void	r_timestamp(mousestatus_t *act);
 static int	r_timeout(void);
 static void	r_click(mousestatus_t *act);
-
-static symtab_t	*gettoken(symtab_t *tab, const char *s, int len);
-static const char *gettokenname(symtab_t *tab, int val);
 
 int
 main(int argc, char *argv[])
@@ -463,8 +437,6 @@ main(int argc, char *argv[])
 		identify = ID_ALL;
 	    else if (strcmp(optarg, "port") == 0)
 		identify = ID_PORT;
-	    else if (strcmp(optarg, "if") == 0)
-		identify = ID_IF;
 	    else if (strcmp(optarg, "type") == 0)
 		identify = ID_TYPE;
 	    else if (strcmp(optarg, "model") == 0)
@@ -630,22 +602,18 @@ main(int argc, char *argv[])
 	    /* print some information */
 	    if (identify != ID_NONE) {
 		if (identify == ID_ALL)
-		    printf("%s %s %s %s\n",
-			rodent.portname, r_if(rodent.hw.iftype),
-			r_name(rodent.rtype), r_model(rodent.hw.model));
+		    printf("%s %s %s\n",
+			rodent.portname, r_name(rodent.rtype), rodent.model);
 		else if (identify & ID_PORT)
 		    printf("%s\n", rodent.portname);
-		else if (identify & ID_IF)
-		    printf("%s\n", r_if(rodent.hw.iftype));
 		else if (identify & ID_TYPE)
 		    printf("%s\n", r_name(rodent.rtype));
 		else if (identify & ID_MODEL)
-		    printf("%s\n", r_model(rodent.hw.model));
+		    printf("%s\n", rodent.model);
 		exit(0);
 	    } else {
-		debug("port: %s  interface: %s  type: %s  model: %s",
-		    rodent.portname, r_if(rodent.hw.iftype),
-		    r_name(rodent.rtype), r_model(rodent.hw.model));
+		debug("port: %s  type: %s  model: %s",
+		    rodent.portname, r_name(rodent.rtype), rodent.model);
 	    }
 
 	    if (rodent.mfd == -1) {
@@ -1084,7 +1052,7 @@ usage(void)
 	"              [-VH [-U threshold]] [-a X[,Y]] [-C threshold] [-m N=M] [-w N]",
 	"              [-z N] [-3 [-E timeout]]",
 	"              [-T distance[,time[,after]]] -p <port>",
-	"       moused [-d] -i <port|if|type|model|all> -p <port>");
+	"       moused [-d] -i <port|type|model|all> -p <port>");
     exit(1);
 }
 
@@ -1176,7 +1144,9 @@ static int
 r_identify(void)
 {
 	/* maybe this is a evdev mouse... */
-	if (ioctl(rodent.mfd, EVIOCGBIT(EV_REL,
+	if (ioctl(rodent.mfd, EVIOCGNAME(
+		  sizeof(rodent.model) - 1), rodent.model) < 0 ||
+	    ioctl(rodent.mfd, EVIOCGBIT(EV_REL,
 	          sizeof(rodent.rel_bits)), rodent.rel_bits) < 0 ||
 	    ioctl(rodent.mfd, EVIOCGBIT(EV_ABS,
 	          sizeof(rodent.abs_bits)), rodent.abs_bits) < 0 ||
@@ -1186,27 +1156,17 @@ r_identify(void)
 	}
 
 	rodent.rtype = r_identify_evdev();
-	rodent.hw.iftype = MOUSE_IF_EVDEV;
 
 	switch (rodent.rtype) {
 	case MOUSE_PROTO_MOUSE:
 	case MOUSE_PROTO_TOUCHPAD:
-		rodent.hw.model = MOUSE_MODEL_GENERIC;
 		break;
-
 	default:
 		debug("unsupported evdev type: %s", r_name(rodent.rtype));
 		return (MOUSE_PROTO_UNKNOWN);
 	}
 
 	return (rodent.rtype);
-}
-
-static const char *
-r_if(int iftype)
-{
-
-    return (gettokenname(rifs, iftype));
 }
 
 static const char *
@@ -1217,13 +1177,6 @@ r_name(int type)
     return (type == MOUSE_PROTO_UNKNOWN ||
 	type >= (int)(sizeof(rnames) / sizeof(rnames[0])) ?
 	unknown : rnames[type]);
-}
-
-static const char *
-r_model(int model)
-{
-
-    return (gettokenname(rmodels, model));
 }
 
 static void
@@ -1682,31 +1635,4 @@ r_click(mousestatus_t *act)
 	button <<= 1;
 	mask >>= 1;
     }
-}
-
-/* name/val mapping */
-
-static symtab_t *
-gettoken(symtab_t *tab, const char *s, int len)
-{
-    int i;
-
-    for (i = 0; tab[i].name != NULL; ++i) {
-	if (strncmp(tab[i].name, s, len) == 0)
-	    break;
-    }
-    return (&tab[i]);
-}
-
-static const char *
-gettokenname(symtab_t *tab, int val)
-{
-    static const char unknown[] = "unknown";
-    int i;
-
-    for (i = 0; tab[i].name != NULL; ++i) {
-	if (tab[i].val == val)
-	    return (tab[i].name);
-    }
-    return (unknown);
 }
