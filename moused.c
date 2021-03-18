@@ -66,6 +66,7 @@ __FBSDID("$FreeBSD$");
 #include <setjmp.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -385,7 +386,7 @@ static const char *r_if(int type);
 static const char *r_name(int type);
 static const char *r_model(int model);
 static void	r_init(void);
-static int	r_protocol(struct input_event *b, mousestatus_t *act);
+static int	r_protocol(int rtype, struct input_event *b, mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
 static int	r_installmap(char *arg);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
@@ -825,7 +826,7 @@ moused(void)
 		else
 		    return;
 	    }
-	    if ((flags = r_protocol(&b, &action0)) == 0)
+	    if ((flags = r_protocol(rodent.rtype, &b, &action0)) == 0)
 		continue;
 
 	    if ((rodent.flags & VirtualScroll) || (rodent.flags & HVirtualScroll)) {
@@ -1176,30 +1177,31 @@ r_identify_evdev(void)
 static int
 r_identify(void)
 {
-    /* maybe this is a evdev mouse... */
-    if (ioctl(rodent.mfd, EVIOCGBIT(EV_REL,
-              sizeof(rodent.rel_bits)), rodent.rel_bits) < 0 ||
-        ioctl(rodent.mfd, EVIOCGBIT(EV_ABS,
-              sizeof(rodent.abs_bits)), rodent.abs_bits) < 0 ||
-        ioctl(rodent.mfd, EVIOCGBIT(EV_KEY,
-              sizeof(rodent.key_bits)), rodent.key_bits) < 0) {
-        return (MOUSE_PROTO_UNKNOWN);
-    }
+	/* maybe this is a evdev mouse... */
+	if (ioctl(rodent.mfd, EVIOCGBIT(EV_REL,
+	          sizeof(rodent.rel_bits)), rodent.rel_bits) < 0 ||
+	    ioctl(rodent.mfd, EVIOCGBIT(EV_ABS,
+	          sizeof(rodent.abs_bits)), rodent.abs_bits) < 0 ||
+	    ioctl(rodent.mfd, EVIOCGBIT(EV_KEY,
+	          sizeof(rodent.key_bits)), rodent.key_bits) < 0) {
+		return (MOUSE_PROTO_UNKNOWN);
+	}
 
-    rodent.rtype = r_identify_evdev();
-    rodent.hw.iftype = MOUSE_IF_EVDEV;
+	rodent.rtype = r_identify_evdev();
+	rodent.hw.iftype = MOUSE_IF_EVDEV;
 
-    switch (rodent.rtype) {
-    case MOUSE_PROTO_MOUSE:
-        rodent.hw.model = MOUSE_MODEL_GENERIC;
-        break;
+	switch (rodent.rtype) {
+	case MOUSE_PROTO_MOUSE:
+	case MOUSE_PROTO_TOUCHPAD:
+		rodent.hw.model = MOUSE_MODEL_GENERIC;
+		break;
 
-    default:
-        debug("unsupported evdev type: %s", r_name(rodent.rtype));
-        return (MOUSE_PROTO_UNKNOWN);
-    }
+	default:
+		debug("unsupported evdev type: %s", r_name(rodent.rtype));
+		return (MOUSE_PROTO_UNKNOWN);
+	}
 
-    return (rodent.rtype);
+	return (rodent.rtype);
 }
 
 static const char *
@@ -1264,70 +1266,129 @@ typedef struct gesture {
 } gesture_t;
 
 static int
-r_protocol(struct input_event *ie, mousestatus_t *act)
+r_protocol(int rtype, struct input_event *ie, mousestatus_t *act)
 {
-    static int butmapev[8] = {	/* evdev */
-	0,
-	MOUSE_BUTTON1DOWN,
-	MOUSE_BUTTON3DOWN,
-	MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN,
-	MOUSE_BUTTON2DOWN,
-	MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN,
-	MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN,
-	MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN
-    };
-    static int rel_x, rel_y, rel_z;
-    static int button;
+	static int butmapev[8] = {	/* evdev */
+	    0,
+	    MOUSE_BUTTON1DOWN,
+	    MOUSE_BUTTON3DOWN,
+	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN,
+	    MOUSE_BUTTON2DOWN,
+	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN,
+	    MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN,
+	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN
+	};
+	static int rel_x, rel_y, rel_z, rel_w;
+	static int abs_x, abs_y, abs_p, abs_w;
+	static int oabs_x, oabs_y;
+	static int button, nfingers;
+	static bool touch, otouch;
 
-    debug("received event 0x%x, 0x%x, %d", ie->type, ie->code, ie->value);
+	debug("received event 0x%x, 0x%x, %d", ie->type, ie->code, ie->value);
 
-    switch (ie->type) {
-    case EV_REL:
-        if (ie->code == REL_X)
-            rel_x = ie->value;
-        else if (ie->code == REL_Y)
-            rel_y = ie->value;
-        else if (ie->code == REL_WHEEL)
-            rel_z = ie->value;
-//        else if (ie->code == REL_HWHEEL)
-//            rel_w = ie->value;
-        break;
-    case EV_KEY:
-        if (ie->code >= BTN_LEFT && ie->code < BTN_LEFT + 8) {
-            button &= ~(1 << (ie->code - BTN_LEFT));
-            button |= ((!!ie->value) << (ie->code - BTN_LEFT));
-        }
-        break;
-    }
+	switch (ie->type) {
+	case EV_REL:
+		switch (ie->code) {
+		case REL_X:
+			rel_x = ie->value;
+			break;
+		case REL_Y:
+			rel_y = ie->value;
+			break;
+		case REL_WHEEL:
+			rel_z = ie->value;
+			break;
+		case REL_HWHEEL:
+			rel_w = ie->value;
+			break;
+		}
+		break;
+	case EV_ABS:
+		switch (ie->code) {
+		case ABS_X:
+			abs_x = ie->value;
+			break;
+		case ABS_Y:
+			abs_y = ie->value;
+			break;
+		case ABS_PRESSURE:
+			abs_p = ie->value;
+			break;
+		case ABS_TOOL_WIDTH:
+			abs_w = ie->value;
+			break;
+		}
+		break;
+	case EV_KEY:
+		switch (ie->code) {
+		case BTN_TOUCH:
+			touch = ie->value != 0;
+			break;
+		case BTN_TOOL_FINGER:
+			nfingers = ie->value != 0 ? 1 : nfingers;
+			break;
+		case BTN_TOOL_DOUBLETAP:
+			nfingers = ie->value != 0 ? 2 : nfingers;
+			break;
+		case BTN_TOOL_TRIPLETAP:
+			nfingers = ie->value != 0 ? 3 : nfingers;
+			break;
+		case BTN_TOOL_QUADTAP:
+			nfingers = ie->value != 0 ? 4 : nfingers;
+			break;
+		case BTN_TOOL_QUINTTAP:
+			nfingers = ie->value != 0 ? 5 : nfingers;
+			break;
+		case BTN_LEFT ... BTN_LEFT + 7:
+			button &= ~(1 << (ie->code - BTN_LEFT));
+			button |= ((!!ie->value) << (ie->code - BTN_LEFT));
+			break;
+		}
 
-    if ( ie->type != EV_SYN ||
-        (ie->code != SYN_REPORT && ie->code != SYN_DROPPED))
-        return (0);
+		break;
+	}
 
-    /*
-     * assembly full package
-     */
+	if ( ie->type != EV_SYN ||
+	    (ie->code != SYN_REPORT && ie->code != SYN_DROPPED))
+		return (0);
 
-    debug("assembled full packet %d,%d,%d", rel_x, rel_y, rel_z);
+	/*
+	 * assembly full package
+	 */
 
-    act->obutton = act->button;
+	act->obutton = act->button;
 
-    act->button = butmapev[button & MOUSE_SYS_STDBUTTONS];
-    act->button |= (button & MOUSE_SYS_EXTBUTTONS);
-    act->dx = rel_x;
-    act->dy = rel_y;
-    act->dz = rel_z;
+	act->button = butmapev[button & MOUSE_SYS_STDBUTTONS];
+	act->button |= (button & MOUSE_SYS_EXTBUTTONS);
+	switch (rtype) {
+	case MOUSE_PROTO_MOUSE:
+		debug("assembled full packet %d,%d,%d", rel_x, rel_y, rel_z);
+		act->dx = rel_x;
+		act->dy = rel_y;
+		act->dz = rel_z;
+		break;
+	case MOUSE_PROTO_TOUCHPAD:
+		debug("assembled full packet %d,%d,%d,%d", abs_x, abs_y, abs_p,
+		    abs_w);
+		if (touch && otouch) {
+			act->dx = abs_x - oabs_x;
+			act->dy = abs_y - oabs_y;
+		}
+		oabs_x = abs_x;
+		oabs_y = abs_y;
+		otouch = touch;
+	}
 
-    /*
-     * We don't reset pBufP here yet, as there may be an additional data
-     * byte in some protocols. See above.
-     */
+	/*
+	 * We don't reset pBufP here yet, as there may be an additional data
+	 * byte in some protocols. See above.
+	 */
 
-    /* has something changed? */
-    act->flags = ((act->dx || act->dy || act->dz) ? MOUSE_POSCHANGED : 0)
-	| (act->obutton ^ act->button);
+	/* has something changed? */
+	act->flags = ((act->dx || act->dy || act->dz) ? MOUSE_POSCHANGED : 0)
+	    | (act->obutton ^ act->button);
 
-    return (act->flags);
+	return (act->flags);
 }
 
 static int
