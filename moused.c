@@ -251,7 +251,6 @@ static struct rodentparam {
     int flags;
     const char *portname;	/* /dev/XXX */
     int rtype;			/* MOUSE_PROTO_XXX */
-    int resolution;		/* MOUSE_RES_XXX or a positive number */
     int zmap[4];		/* MOUSE_{X|Y}AXIS or a button number */
     int wmode;			/* wheel mode button number */
     int mfd;			/* mouse file descriptor */
@@ -275,7 +274,6 @@ static struct rodentparam {
     .flags = 0,
     .portname = NULL,
     .rtype = MOUSE_PROTO_UNKNOWN,
-    .resolution = MOUSE_RES_UNKNOWN,
     .zmap = { 0, 0, 0, 0 },
     .wmode = 0,
     .mfd = -1,
@@ -408,7 +406,7 @@ main(int argc, char *argv[])
     for (i = 0; i < MOUSE_MAXBUTTON; ++i)
 	mstate[i] = &bstate[i];
 
-    while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:cdfhi:m:p:r:w:z:")) != -1)
+    while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:cdfhi:m:p:w:z:")) != -1)
 	switch(c) {
 
 	case '3':
@@ -488,26 +486,6 @@ main(int argc, char *argv[])
 
 	case 'p':
 	    rodent.portname = optarg;
-	    break;
-
-	case 'r':
-	    if (strcmp(optarg, "high") == 0)
-		rodent.resolution = MOUSE_RES_HIGH;
-	    else if (strcmp(optarg, "medium-high") == 0)
-		rodent.resolution = MOUSE_RES_HIGH;
-	    else if (strcmp(optarg, "medium-low") == 0)
-		rodent.resolution = MOUSE_RES_MEDIUMLOW;
-	    else if (strcmp(optarg, "low") == 0)
-		rodent.resolution = MOUSE_RES_LOW;
-	    else if (strcmp(optarg, "default") == 0)
-		rodent.resolution = MOUSE_RES_DEFAULT;
-	    else {
-		rodent.resolution = atoi(optarg);
-		if (rodent.resolution <= 0) {
-		    warnx("invalid argument `%s'", optarg);
-		    usage();
-		}
-	    }
 	    break;
 
 	case 'w':
@@ -1103,7 +1081,7 @@ static void
 usage(void)
 {
     fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n",
-	"usage: moused [-cdf] [-I file] [-r resolution]",
+	"usage: moused [-cdf] [-I file]",
 	"              [-VH [-U threshold]] [-a X[,Y]] [-C threshold] [-m N=M] [-w N]",
 	"              [-z N] [-3 [-E timeout]]",
 	"              [-T distance[,time[,after]]] -p <port>",
