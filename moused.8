@@ -48,7 +48,6 @@
 .Op Fl m Ar N=M
 .Op Fl w Ar N
 .Op Fl z Ar target
-.Op Fl t Ar mousetype
 .Op Fl l Ar level
 .Op Fl 3 Op Fl E Ar timeout
 .Op Fl T Ar distance Ns Op , Ns Ar time Ns Op , Ns Ar after
@@ -343,101 +342,6 @@ Do not put space around
 Use
 .Ar port
 to communicate with the mouse.
-.It Fl t Ar type
-Specify the protocol type of the mouse attached to the port.
-You may explicitly specify a type listed below, or use
-.Ar auto
-to let the
-.Nm
-utility automatically select an appropriate protocol for the given
-mouse.
-If you entirely omit this option in the command line,
-.Fl t Ar auto
-is assumed.
-Under normal circumstances,
-you need to use this option only if the
-.Nm
-utility is not able to detect the protocol automatically
-(see
-.Sx "Configuring Mouse Daemon" ) .
-.Pp
-Note that if a protocol type is specified with this option, the
-.Fl P
-option above is implied and Plug and Play COM device enumeration
-procedure will be disabled.
-.Pp
-Also note that if your mouse is attached to the PS/2 mouse port, you should
-always choose
-.Ar auto
-or
-.Ar ps/2 ,
-regardless of the brand and model of the mouse.
-.Pp
-For the USB mouse, the protocol must be
-.Ar auto .
-No other protocol will work with the USB mouse.
-.Pp
-Valid types for this option are
-listed below.
-.Pp
-For the serial mouse:
-.Bl -tag -compact -width mousesystemsxxx
-.It Ar microsoft
-Microsoft serial mouse protocol.
-Most 2-button serial mice use this protocol.
-.It Ar intellimouse
-Microsoft IntelliMouse protocol.
-Genius NetMouse,
-.Tn ASCII
-Mie Mouse,
-Logitech MouseMan+ and FirstMouse+ use this protocol too.
-Other mice with a roller/wheel may be compatible with this protocol.
-.It Ar mousesystems
-MouseSystems 5-byte protocol.
-3-button mice may use this protocol.
-.It Ar mmseries
-MM Series mouse protocol.
-.It Ar logitech
-Logitech mouse protocol.
-Note that this is for old Logitech models.
-.Ar mouseman
-or
-.Ar intellimouse
-should be specified for newer models.
-.It Ar mouseman
-Logitech MouseMan and TrackMan protocol.
-Some 3-button mice may be compatible
-with this protocol.
-Note that MouseMan+ and FirstMouse+ use
-.Ar intellimouse
-protocol rather than this one.
-.It Ar glidepoint
-ALPS GlidePoint protocol.
-.It Ar thinkingmouse
-Kensington ThinkingMouse protocol.
-.It Ar mmhitab
-Hitachi tablet protocol.
-.It Ar x10mouseremote
-X10 MouseRemote.
-.It Ar kidspad
-Genius Kidspad and Easypad protocol.
-.It Ar versapad
-Interlink VersaPad protocol.
-.It Ar gtco_digipad
-GTCO Digipad protocol.
-.El
-.Pp
-For the PS/2 mouse:
-.Bl -tag -compact -width mousesystemsxxx
-.It Ar ps/2
-This is the only protocol type available for the PS/2 mouse
-and should be specified for any PS/2 mice, regardless of the brand.
-.El
-.Pp
-For the USB mouse,
-.Ar auto
-is the only protocol type available for the USB mouse
-and should be specified for any USB mice, regardless of the brand.
 .It Fl w Ar N
 Make the physical button
 .Ar N
