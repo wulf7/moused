@@ -256,7 +256,6 @@ static struct rodentparam {
     int wmode;			/* wheel mode button number */
     int mfd;			/* mouse file descriptor */
     int cfd;			/* /dev/consolectl file descriptor */
-    int is_removable;		/* set if device is removable, like USB */
     long clickthreshold;	/* double click speed in msec */
     long button2timeout;	/* 3 button emulation timeout */
     mousehw_t hw;		/* mouse device hardware information */
@@ -279,7 +278,6 @@ static struct rodentparam {
     .wmode = 0,
     .mfd = -1,
     .cfd = -1,
-    .is_removable = 0,
     .clickthreshold = DFLT_CLICKTHRESHOLD,
     .button2timeout = DFLT_BUTTON2TIMEOUT,
     .accelx = 1.0,
