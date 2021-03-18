@@ -38,11 +38,10 @@
 .Nd pass mouse data to the console driver
 .Sh SYNOPSIS
 .Nm
-.Op Fl DPRacdfs
+.Op Fl DPRacdf
 .Op Fl I Ar file
 .Op Fl F Ar rate
 .Op Fl r Ar resolution
-.Op Fl S Ar baudrate
 .Op Fl VH Op Fl U Ar distance Fl L Ar distance
 .Op Fl A Ar exp Ns Op , Ns Ar offset
 .Op Fl a Ar X Ns Op , Ns Ar Y
@@ -194,9 +193,6 @@ Both RTS and DTR lines may need to be dropped for
 a 3-button mouse to operate in the
 .Ar mousesystems
 mode.
-.It Fl S Ar baudrate
-Select the baudrate for the serial port (1200 to 9600).
-Not all serial mice support this option.
 .It Fl T Ar distance Ns Op , Ns Ar time Ns Op , Ns Ar after
 Terminate drift.
 Use this option if mouse pointer slowly wanders when mouse is not moved.
@@ -361,9 +357,6 @@ Set the resolution of the device; in Dots Per Inch, or
 or
 .Ar high .
 This option may not be supported by all the device.
-.It Fl s
-Select a baudrate of 9600 for the serial line.
-Not all serial mice support this option.
 .It Fl t Ar type
 Specify the protocol type of the mouse attached to the port.
 You may explicitly specify a type listed below, or use
