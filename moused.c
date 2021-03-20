@@ -63,6 +63,7 @@ __FBSDID("$FreeBSD$");
 #include <fcntl.h>
 #include <libutil.h>
 #include <limits.h>
+#include <poll.h>
 #include <setjmp.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -692,8 +693,8 @@ moused(void)
     mousestatus_t action0;		/* original mouse action */
     mousestatus_t action;		/* interim buffer */
     mousestatus_t action2;		/* mapped action */
-    struct timeval timeout;
-    fd_set fds;
+    int timeout;
+    struct pollfd fds;
     struct input_event b;
     pid_t mpid;
     int flags;
@@ -743,16 +744,15 @@ moused(void)
     extioctl = (ioctl(rodent.cfd, CONS_MOUSECTL, &mouse) == 0);
 
     /* process mouse data */
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 20000;		/* 20 msec */
     for (;;) {
 
-	FD_ZERO(&fds);
-	FD_SET(rodent.mfd, &fds);
+	fds.fd = rodent.mfd;
+	fds.events = POLLIN;
+	fds.revents = 0;
+	timeout = ((rodent.flags & Emulate3Button) &&
+	    S_DELAYED(mouse_button_state)) ? 20 : -1;
 
-	c = select(FD_SETSIZE, &fds, NULL, NULL,
-		   ((rodent.flags & Emulate3Button) &&
-		    S_DELAYED(mouse_button_state)) ? &timeout : NULL);
+	c = poll(&fds, 1, timeout);
 	if (c < 0) {                    /* error */
 	    logwarn("failed to read from mouse");
 	    continue;
@@ -771,6 +771,8 @@ moused(void)
 	    }
 	} else {
 	    /* mouse movement */
+	    if ((fds.revents & POLLIN) == 0)
+		return;
 	    if (read(rodent.mfd, &b, sizeof(b)) == -1) {
 		if (errno == EWOULDBLOCK)
 		    continue;
