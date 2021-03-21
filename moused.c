@@ -93,12 +93,6 @@ __FBSDID("$FreeBSD$");
 #define MOUSE_XAXIS	(-1)
 #define MOUSE_YAXIS	(-2)
 
-/* Logitech PS2++ protocol */
-#define MOUSE_PS2PLUS_CHECKBITS(b)	\
-			((((b[2] & 0x03) << 2) | 0x02) == (b[1] & 0x0f))
-#define MOUSE_PS2PLUS_PACKET_TYPE(b)	\
-			(((b[0] & 0x30) >> 2) | ((b[1] & 0x30) >> 4))
-
 #define	ChordMiddle	0x0001
 #define Emulate3Button	0x0002
 #define VirtualScroll	0x0020
