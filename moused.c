@@ -2,6 +2,8 @@
  ** SPDX-License-Identifier: BSD-4-Clause
  **
  ** Copyright (c) 1995 Michael Smith, All rights reserved.
+ ** Copyright (c) 2008 Jean-Sebastien Pedron <dumbbell@FreeBSD.org>
+ ** Copyright (c) 2021 Vladimir Kondratyev <wulf@FreeBSD.org>
  **
  ** Redistribution and use in source and binary forms, with or without
  ** modification, are permitted provided that the following conditions
@@ -36,13 +38,8 @@
 /**
  ** MOUSED.C
  **
- ** Mouse daemon : listens to a serial port, the bus mouse interface, or
- ** the PS/2 mouse port for mouse data stream, interprets data and passes
- ** ioctls off to the console driver.
- **
- ** The mouse interface functions are derived closely from the mouse
- ** handler in the XFree86 X server.  Many thanks to the XFree86 people
- ** for their great work!
+ ** Mouse daemon : listens to a evdev device node for mouse data stream,
+ ** interprets data and passes ioctls off to the console driver.
  **
  **/
 
@@ -50,12 +47,15 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
+#include <sys/bitstring.h>
 #include <sys/consio.h>
 #include <sys/mouse.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/un.h>
+
+#include <dev/evdev/input.h>
 
 #include <ctype.h>
 #include <err.h>
@@ -76,6 +76,13 @@ __FBSDID("$FreeBSD$");
 #include <termios.h>
 #include <unistd.h>
 #include <math.h>
+
+/*
+ * bitstr_t implementation must be identical to one found in EVIOCG*
+ * libevdev ioctls. Our bitstring(3) API is compatible since r299090.
+ */
+_Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
+    "bitstr_t size mismatch");
 
 #define MAX_CLICKTHRESHOLD	2000	/* 2 seconds */
 #define MAX_BUTTON2TIMEOUT	2000	/* 2 seconds */
@@ -122,6 +129,22 @@ __FBSDID("$FreeBSD$");
 		}							\
 	} while (0)
 
+/* Operations on timevals. */
+#define	tvclr(tvp)	((tvp)->tv_sec = (tvp)->tv_usec = 0)
+#define	tvcmp(tvp, uvp, cmp)						\
+	(((tvp)->tv_sec == (uvp)->tv_sec) ?				\
+	    ((tvp)->tv_usec cmp (uvp)->tv_usec) :			\
+	    ((tvp)->tv_sec cmp (uvp)->tv_sec))
+#define	tvadd(tvp, uvp)							\
+	do {								\
+		(tvp)->tv_sec += (uvp)->tv_sec;				\
+		(tvp)->tv_usec += (uvp)->tv_usec;			\
+		if ((tvp)->tv_usec >= 1000000) {			\
+			(tvp)->tv_sec++;				\
+			(tvp)->tv_usec -= 1000000;			\
+		}							\
+	} while (0)
+
 #define debug(...) do {						\
 	if (debug && nodaemon)					\
 		warnx(__VA_ARGS__);				\
@@ -142,6 +165,14 @@ __FBSDID("$FreeBSD$");
 
 #define logwarnx(...)						\
 	log_or_warn(LOG_DAEMON | LOG_WARNING, 0, __VA_ARGS__)
+
+enum gesture {
+	GEST_IGNORE,
+	GEST_ACCUMULATE,
+	GEST_MOVE,
+	GEST_VSCROLL,
+	GEST_HSCROLL,
+};
 
 /* structures */
 
@@ -173,15 +204,6 @@ static int	hscroll_movement;
 
 /* local variables */
 
-#include <sys/bitstring.h>
-#include <dev/evdev/input.h>
-/*
- * bitstr_t implementation must be identical to one found in EVIOCG*
- * libevdev ioctls. Our bitstring(3) API is compatible since r299090.
- */
-_Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
-    "bitstr_t size mismatch");
-
 #define MOUSE_IF_EVDEV		6
 #define MOUSE_PROTO_MOUSE	0
 #define MOUSE_PROTO_TOUCHPAD	1
@@ -207,6 +229,70 @@ static const char *rnames[] = {
     NULL
 };
 
+static struct tpcaps {
+	bool	is_clickpad;
+	bool	is_mt;
+	bool	cap_touch;
+	bool	cap_pressure;
+	bool	cap_width;
+	int	min_x;
+	int	max_x;
+	int	min_y;
+	int	max_y;
+} synhw;
+
+static struct tpinfo {
+	bool	two_finger_scroll;	/* Enable two finger scrolling */
+	bool	natural_scroll;		/* Enable natural scrolling */
+	bool	three_finger_drag;	/* Enable dragging with three fingers */
+	int	min_pressure;		/* Min pressure to start an action */
+	int	max_pressure;		/* Maximum pressure to detect palm */
+	int	max_width;		/* Max finger width to detect palm */
+	int	margin_top;		/* Top margin */
+	int	margin_right;		/* Right margin */
+	int	margin_bottom;		/* Bottom margin */
+	int	margin_left;		/* Left margin */
+	int	tap_timeout;		/* */
+	int	tap_threshold;		/* Minimum pressure to detect a tap */
+	int	tap_max_delta;		/* Length of segments above which a tap is ignored */
+	int	taphold_timeout;	/* Maximum elapsed time between two taps to consider a tap-hold action */
+	int	vscroll_ver_area;	/* Area reserved for vertical virtual scrolling */
+	int	vscroll_hor_area;	/* Area reserved for horizontal virtual scrolling */
+	int	vscroll_min_delta;	/* Minimum movement to consider virtual scrolling */
+	int	softbuttons_y;		/* Vertical size of softbuttons area */
+	int	softbutton2_x;		/* Horizontal offset of 2-nd softbutton left edge */
+	int	softbutton3_x;		/* Horizontal offset of 3-rd softbutton left edge */
+} syninfo = {
+	.two_finger_scroll = true,
+	.natural_scroll = false,
+	.three_finger_drag = false,
+	.min_pressure = 1,
+	.max_pressure = 255,
+	.max_width = 16,
+	.tap_timeout = 150,		/* ms */
+	.tap_threshold = 50,		/* ms */
+	.tap_max_delta = 80,
+	.taphold_timeout = 200,
+	.vscroll_min_delta = 50,
+	.vscroll_hor_area = -600,
+	.vscroll_ver_area = 0,
+};
+
+static struct gesture_state {
+	int 		start_x;
+	int 		start_y;
+	int 		prev_x;
+	int 		prev_y;
+	int		fingers_nb;
+	int		tap_button;
+	bool		fingerdown;
+	bool		in_taphold;
+	int		in_vscroll;
+	int		zmax;           /* maximum pressure value */
+	struct timeval	taptimeout;     /* tap timeout for touchpads */
+	struct timeval	startdelay;
+} gesture;
+
 static struct rodentparam {
     int flags;
     const char *portname;	/* /dev/XXX */
@@ -220,15 +306,15 @@ static struct rodentparam {
     char model[80];		/* mouse name */
     float accelx;		/* Acceleration in the X axis */
     float accely;		/* Acceleration in the Y axis */
+    float accelz;		/* Acceleration in the wheel axis */
     float expoaccel;		/* Exponential acceleration */
     float expoffset;		/* Movement offset for exponential accel. */
-    float remainx;		/* Remainder on X and Y axis, respectively... */
-    float remainy;		/*    ... to compensate for rounding errors. */
+    float remainx;		/* Remainder on X, Y and wheel axis, ... */
+    float remainy;		/*    ...  respectively to compensate */
+    float remainz;		/*    ... for rounding errors. */
     int scrollthreshold;	/* Movement distance before virtual scrolling */
     int scrollspeed;		/* Movement distance to rate of scrolling */
-    bitstr_t bit_decl(key_bits, KEY_CNT); /* */
-    bitstr_t bit_decl(rel_bits, REL_CNT); /* Evdev capabilities */
-    bitstr_t bit_decl(abs_bits, ABS_CNT); /* */
+    int idletimeout;		/* */
 } rodent = {
     .flags = 0,
     .portname = NULL,
@@ -241,12 +327,15 @@ static struct rodentparam {
     .button2timeout = DFLT_BUTTON2TIMEOUT,
     .accelx = 1.0,
     .accely = 1.0,
+    .accelz = 1.0,
     .expoaccel = 1.0,
     .expoffset = 1.0,
     .remainx = 0.0,
     .remainy = 0.0,
+    .remainz = 0.0,
     .scrollthreshold = DFLT_SCROLLTHRESHOLD,
     .scrollspeed = DFLT_SCROLLSPEED,
+    .idletimeout = -1,
 };
 
 /* button status */
@@ -328,8 +417,8 @@ static struct drift_xy  drift_previous = {0, 0};	/* steps in prev. drift_time */
 
 /* function prototypes */
 
-static void	linacc(int, int, int*, int*);
-static void	expoacc(int, int, int*, int*);
+static void	linacc(int, int, int, int*, int*, int*);
+static void	expoacc(int, int, int, int*, int*, int*);
 static void	moused(void);
 static void	hup(int sig);
 static void	cleanup(int sig);
@@ -341,13 +430,15 @@ static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 static int	r_identify(void);
 static const char *r_name(int type);
 static void	r_init(void);
-static int	r_protocol(int rtype, struct input_event *b, mousestatus_t *act);
+static int	r_protocol(struct input_event *b, mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
 static int	r_installmap(char *arg);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
 static void	r_timestamp(mousestatus_t *act);
 static int	r_timeout(void);
 static void	r_click(mousestatus_t *act);
+static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
+		    struct timeval *time, mousestatus_t *ms, int *idletimout);
 
 int
 main(int argc, char *argv[])
@@ -376,7 +467,8 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'a':
-	    i = sscanf(optarg, "%f,%f", &rodent.accelx, &rodent.accely);
+	    i = sscanf(optarg, "%f,%f,%f",
+	        &rodent.accelx, &rodent.accely, &rodent.accelz);
 	    if (i == 0) {
 		warnx("invalid linear acceleration argument '%s'", optarg);
 		usage();
@@ -628,20 +720,23 @@ main(int argc, char *argv[])
  */
 
 static void
-linacc(int dx, int dy, int *movex, int *movey)
+linacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 {
-    float fdx, fdy;
+    float fdx, fdy, fdz;
 
-    if (dx == 0 && dy == 0) {
-	*movex = *movey = 0;
+    if (dx == 0 && dy == 0 && dz == 0) {
+	*movex = *movey = *movez = 0;
 	return;
     }
     fdx = dx * rodent.accelx + rodent.remainx;
     fdy = dy * rodent.accely + rodent.remainy;
+    fdz = dz * rodent.accelz + rodent.remainz;
     *movex = lround(fdx);
     *movey = lround(fdy);
+    *movez = lround(fdz);
     rodent.remainx = fdx - *movex;
     rodent.remainy = fdy - *movey;
+    rodent.remainz = fdz - *movez;
 }
 
 /*
@@ -654,17 +749,18 @@ linacc(int dx, int dy, int *movex, int *movey)
  */
 
 static void
-expoacc(int dx, int dy, int *movex, int *movey)
+expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 {
     static float lastlength[3] = {0.0, 0.0, 0.0};
-    float fdx, fdy, length, lbase, accel;
+    float fdx, fdy, fdz, length, lbase, accel;
 
-    if (dx == 0 && dy == 0) {
-	*movex = *movey = 0;
+    if (dx == 0 && dy == 0 && dz == 0) {
+	*movex = *movey = *movez = 0;
 	return;
     }
     fdx = dx * rodent.accelx;
     fdy = dy * rodent.accely;
+    fdz = dz * rodent.accelz;
     length = sqrtf((fdx * fdx) + (fdy * fdy));		/* Pythagoras */
     length = (length + lastlength[0] + lastlength[1] + lastlength[2]) / 4;
     lbase = length / rodent.expoffset;
@@ -673,8 +769,10 @@ expoacc(int dx, int dy, int *movex, int *movey)
     fdy = fdy * accel + rodent.remainy;
     *movex = lroundf(fdx);
     *movey = lroundf(fdy);
+    *movez = lround(fdz);
     rodent.remainx = fdx - *movex;
     rodent.remainy = fdy - *movey;
+    rodent.remainz = fdz - *movez;
     lastlength[2] = lastlength[1];
     lastlength[1] = lastlength[0];
     lastlength[0] = length;	/* Insert new average, not original length! */
@@ -688,6 +786,7 @@ moused(void)
     mousestatus_t action;		/* interim buffer */
     mousestatus_t action2;		/* mapped action */
     int timeout;
+    bool timeout_em3b;
     struct pollfd fds;
     struct input_event b;
     pid_t mpid;
@@ -743,14 +842,24 @@ moused(void)
 	fds.fd = rodent.mfd;
 	fds.events = POLLIN;
 	fds.revents = 0;
-	timeout = ((rodent.flags & Emulate3Button) &&
-	    S_DELAYED(mouse_button_state)) ? 20 : -1;
+	timeout = -1;
+	if ((rodent.flags & Emulate3Button) && S_DELAYED(mouse_button_state)) {
+	    timeout = 20;
+	    timeout_em3b = true;
+	}
+	if (rodent.idletimeout != -1) {
+	    if (timeout == -1 || rodent.idletimeout < timeout) {
+		timeout = rodent.idletimeout;
+		timeout_em3b = false;
+	    } else
+		rodent.idletimeout -= timeout;
+	}
 
 	c = poll(&fds, 1, timeout);
 	if (c < 0) {                    /* error */
 	    logwarn("failed to read from mouse");
 	    continue;
-	} else if (c == 0) {            /* timeout */
+	} else if (c == 0 && timeout_em3b) {	/* timeout */
 	    /* assert(rodent.flags & Emulate3Button) */
 	    action0.button = action0.obutton;
 	    action0.dx = action0.dy = action0.dz = 0;
@@ -765,15 +874,24 @@ moused(void)
 	    }
 	} else {
 	    /* mouse movement */
-	    if ((fds.revents & POLLIN) == 0)
-		return;
-	    if (read(rodent.mfd, &b, sizeof(b)) == -1) {
-		if (errno == EWOULDBLOCK)
-		    continue;
-		else
+	    if (c > 0) {
+		if ((fds.revents & POLLIN) == 0)
 		    return;
+		if (read(rodent.mfd, &b, sizeof(b)) == -1) {
+		    if (errno == EWOULDBLOCK)
+			continue;
+		    else
+			return;
+		}
+	    } else {
+		b.time.tv_sec = timeout == 0 ? 0 : LONG_MAX;
+		b.time.tv_usec = 0;
+		b.type = EV_SYN;
+		b.code = SYN_REPORT;
+		b.value = 1;
 	    }
-	    if ((flags = r_protocol(rodent.rtype, &b, &action0)) == 0)
+	    rodent.idletimeout = -1;
+	    if ((flags = r_protocol(&b, &action0)) == 0)
 		continue;
 
 	    if ((rodent.flags & VirtualScroll) || (rodent.flags & HVirtualScroll)) {
@@ -945,14 +1063,13 @@ moused(void)
 		    mouse.operation = MOUSE_MOTION_EVENT;
 		    mouse.u.data.buttons = action2.button;
 		    if (rodent.flags & ExponentialAcc) {
-			expoacc(action2.dx, action2.dy,
-			    &mouse.u.data.x, &mouse.u.data.y);
+			expoacc(action2.dx, action2.dy, action2.dz,
+			    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
 		    }
 		    else {
-			linacc(action2.dx, action2.dy,
-			    &mouse.u.data.x, &mouse.u.data.y);
+			linacc(action2.dx, action2.dy, action2.dz,
+			    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
 		    }
-		    mouse.u.data.z = action2.dz;
 		    if (debug < 2)
 			if (!paused)
 				ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
@@ -961,14 +1078,13 @@ moused(void)
 		mouse.operation = MOUSE_ACTION;
 		mouse.u.data.buttons = action2.button;
 		if (rodent.flags & ExponentialAcc) {
-		    expoacc(action2.dx, action2.dy,
-			&mouse.u.data.x, &mouse.u.data.y);
+		    expoacc(action2.dx, action2.dy, action2.dz,
+			&mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
 		}
 		else {
-		    linacc(action2.dx, action2.dy,
-			&mouse.u.data.x, &mouse.u.data.y);
+		    linacc(action2.dx, action2.dy, action2.dz,
+			&mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
 		}
-		mouse.u.data.z = action2.dz;
 		if (debug < 2)
 		    if (!paused)
 			ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
@@ -1064,83 +1180,133 @@ log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 static inline int
 bit_find(bitstr_t *array, int start, int stop)
 {
-    int res;
+	int res;
 
-    bit_ffs_at(array, start, stop - start, &res);
-    return (res != -1);
+	bit_ffs_at(array, start, stop - start, &res);
+	return (res != -1);
 }
 
 /* Derived from EvdevProbe() function of xf86-input-evdev driver */
 static int
-r_identify_evdev(void)
+r_identify_evdev(bitstr_t *key_bits, bitstr_t *rel_bits, bitstr_t *abs_bits)
 {
-    int has_keys = bit_find(rodent.key_bits, 0, BTN_MISC);
-    int has_buttons = bit_find(rodent.key_bits, BTN_MISC, BTN_JOYSTICK);
-    int has_lmr = bit_find(rodent.key_bits, BTN_LEFT, BTN_MIDDLE + 1);
-    int has_rel_axes = bit_find(rodent.rel_bits, 0, REL_CNT);
-    int has_abs_axes = bit_find(rodent.abs_bits, 0, ABS_CNT);
-    int has_mt = bit_find(rodent.abs_bits, ABS_MT_SLOT, ABS_CNT);
+	int has_keys = bit_find(key_bits, 0, BTN_MISC);
+	int has_buttons = bit_find(key_bits, BTN_MISC, BTN_JOYSTICK);
+	int has_lmr = bit_find(key_bits, BTN_LEFT, BTN_MIDDLE + 1);
+	int has_rel_axes = bit_find(rel_bits, 0, REL_CNT);
+	int has_abs_axes = bit_find(abs_bits, 0, ABS_CNT);
+	int has_mt = bit_find(abs_bits, ABS_MT_SLOT, ABS_CNT);
 
-    if (has_abs_axes) {
-        if (has_mt && !has_buttons) {
-            /* TBD:Improve joystick detection */
-            if (bit_test(rodent.key_bits, BTN_JOYSTICK)) {
-                return MOUSE_PROTO_JOYSTICK;
-            } else {
-                has_buttons = TRUE;
-            }
-        }
+	if (has_abs_axes) {
+		if (has_mt && !has_buttons) {
+			/* TBD:Improve joystick detection */
+			if (bit_test(key_bits, BTN_JOYSTICK)) {
+				return (MOUSE_PROTO_JOYSTICK);
+			} else {
+				has_buttons = TRUE;
+			}
+		}
 
-        if (bit_test(rodent.abs_bits, ABS_X) &&
-            bit_test(rodent.abs_bits, ABS_Y)) {
-            if (bit_test(rodent.key_bits, BTN_TOOL_PEN) ||
-                bit_test(rodent.key_bits, BTN_STYLUS) ||
-                bit_test(rodent.key_bits, BTN_STYLUS2)) {
-                    return MOUSE_PROTO_TABLET;
-            } else if (bit_test(rodent.abs_bits, ABS_PRESSURE) ||
-                       bit_test(rodent.key_bits, BTN_TOUCH)) {
-                if (has_lmr || bit_test(rodent.key_bits, BTN_TOOL_FINGER)) {
-                    return MOUSE_PROTO_TOUCHPAD;
-                } else {
-                    return MOUSE_PROTO_TOUCHSCREEN;
-                }
-            } else if (!(bit_test(rodent.rel_bits, REL_X) &&
-                         bit_test(rodent.rel_bits, REL_Y)) &&
-                       has_lmr) {
-                /* some touchscreens use BTN_LEFT rather than BTN_TOUCH */
-                return MOUSE_PROTO_TOUCHSCREEN;
-            }
-        }
-    }
+		if (bit_test(abs_bits, ABS_X) &&
+		    bit_test(abs_bits, ABS_Y)) {
+			if (bit_test(key_bits, BTN_TOOL_PEN) ||
+			    bit_test(key_bits, BTN_STYLUS) ||
+			    bit_test(key_bits, BTN_STYLUS2)) {
+				return (MOUSE_PROTO_TABLET);
+			} else if (bit_test(abs_bits, ABS_PRESSURE) ||
+				   bit_test(key_bits, BTN_TOUCH)) {
+				if (has_lmr ||
+				    bit_test(key_bits, BTN_TOOL_FINGER)) {
+					return (MOUSE_PROTO_TOUCHPAD);
+				} else {
+					return (MOUSE_PROTO_TOUCHSCREEN);
+				}
+			/* some touchscreens use BTN_LEFT rather than BTN_TOUCH */
+			} else if (!(bit_test(rel_bits, REL_X) &&
+				     bit_test(rel_bits, REL_Y)) &&
+				     has_lmr) {
+				return (MOUSE_PROTO_TOUCHSCREEN);
+			}
+		}
+	}
 
-    if (has_keys)
-        return MOUSE_PROTO_KEYBOARD;
-    else if (has_rel_axes || has_abs_axes || has_buttons)
-        return MOUSE_PROTO_MOUSE;
+	if (has_keys)
+		return (MOUSE_PROTO_KEYBOARD);
+	else if (has_rel_axes || has_abs_axes || has_buttons)
+		return (MOUSE_PROTO_MOUSE);
 
-    return MOUSE_PROTO_UNKNOWN;
+	return (MOUSE_PROTO_UNKNOWN);
 }
 
 static int
 r_identify(void)
 {
+	struct input_absinfo ai;
+	bitstr_t bit_decl(key_bits, KEY_CNT); /* */
+	bitstr_t bit_decl(rel_bits, REL_CNT); /* Evdev capabilities */
+	bitstr_t bit_decl(abs_bits, ABS_CNT); /* */
+	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
+	int sz_x, sz_y, res_x, res_y;
+
 	/* maybe this is a evdev mouse... */
 	if (ioctl(rodent.mfd, EVIOCGNAME(
 		  sizeof(rodent.model) - 1), rodent.model) < 0 ||
 	    ioctl(rodent.mfd, EVIOCGBIT(EV_REL,
-	          sizeof(rodent.rel_bits)), rodent.rel_bits) < 0 ||
+	          sizeof(rel_bits)), rel_bits) < 0 ||
 	    ioctl(rodent.mfd, EVIOCGBIT(EV_ABS,
-	          sizeof(rodent.abs_bits)), rodent.abs_bits) < 0 ||
+	          sizeof(abs_bits)), abs_bits) < 0 ||
 	    ioctl(rodent.mfd, EVIOCGBIT(EV_KEY,
-	          sizeof(rodent.key_bits)), rodent.key_bits) < 0) {
+	          sizeof(key_bits)), key_bits) < 0) {
 		return (MOUSE_PROTO_UNKNOWN);
 	}
 
-	rodent.rtype = r_identify_evdev();
+	rodent.rtype = r_identify_evdev(key_bits, rel_bits, abs_bits);
 
 	switch (rodent.rtype) {
-	case MOUSE_PROTO_MOUSE:
 	case MOUSE_PROTO_TOUCHPAD:
+		if (ioctl(rodent.mfd, EVIOCGABS(ABS_X), &ai) < 0)
+			return (MOUSE_PROTO_UNKNOWN);
+		synhw.min_x = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
+		synhw.max_x = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
+		sz_x = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
+		res_x = ai.resolution;
+		if (ioctl(rodent.mfd, EVIOCGABS(ABS_Y), &ai) < 0)
+			return (MOUSE_PROTO_UNKNOWN);
+		synhw.min_y = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
+		synhw.max_y = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
+		sz_y = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
+		res_y = ai.resolution;
+		if (bit_test(key_bits, BTN_TOUCH))
+			synhw.cap_touch = true;
+		if (bit_test(abs_bits, ABS_PRESSURE))
+			synhw.cap_pressure = true;
+		if (bit_test(abs_bits, ABS_TOOL_WIDTH))
+			synhw.cap_width = true;
+		if (ioctl(rodent.mfd,
+		    EVIOCGPROP(sizeof(prop_bits)), prop_bits) < 0)
+			return (MOUSE_PROTO_UNKNOWN);
+		if (bit_test(prop_bits, INPUT_PROP_BUTTONPAD))
+			synhw.is_clickpad = true;
+		/* Set bottom quarter as 42% - 16% - 42% sized softbuttons */
+		if (synhw.is_clickpad) {
+			syninfo.softbuttons_y = sz_y / 4;
+			if (bit_test(prop_bits, INPUT_PROP_TOPBUTTONPAD))
+				syninfo.softbuttons_y = -syninfo.softbuttons_y;
+			syninfo.softbutton2_x = sz_x * 11 / 25;
+			syninfo.softbutton3_x = sz_x * 14 / 25;
+		}
+		if (res_x != 0 && res_y != 0)
+			rodent.accely *= ((float)res_x / (float)res_y);
+		if (res_x == 0)
+			res_x = 40;
+		rodent.accelx *= res_x;
+		rodent.accelx /= 200;
+		rodent.accely *= res_x;
+		rodent.accely /= 200;
+		rodent.accelz *= res_x;
+		rodent.accelz /= 2000;
+		/* FALLTHROUGH */
+	case MOUSE_PROTO_MOUSE:
 		break;
 	default:
 		debug("unsupported evdev type: %s", r_name(rodent.rtype));
@@ -1165,40 +1331,8 @@ r_init(void)
 {
 }
 
-typedef struct packet {
-    int     x;
-    int     y;
-} packet_t;
-
-#define PACKETQUEUE	10
-#define QUEUE_CURSOR(x)	(x + PACKETQUEUE) % PACKETQUEUE
-
-typedef struct smoother {
-    packet_t    queue[PACKETQUEUE];
-    int         queue_len;
-    int         queue_cursor;
-    int         start_x;
-    int         start_y;
-    int         avg_dx;
-    int         avg_dy;
-    int         squelch_x;
-    int         squelch_y;
-    int         is_fuzzy;
-    int         active;
-} smoother_t;
-
-typedef struct gesture {
-    int                 window_min;
-    int                 fingers_nb;
-    int                 tap_button;
-    int                 in_taphold;
-    int                 in_vscroll;
-    int                 zmax;           /* maximum pressure value */
-    struct timeval      taptimeout;     /* tap timeout for touchpads */
-} gesture_t;
-
 static int
-r_protocol(int rtype, struct input_event *ie, mousestatus_t *act)
+r_protocol(struct input_event *ie, mousestatus_t *act)
 {
 	static int butmapev[8] = {	/* evdev */
 	    0,
@@ -1211,12 +1345,15 @@ r_protocol(int rtype, struct input_event *ie, mousestatus_t *act)
 	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN
 	};
 	static int rel_x, rel_y, rel_z, rel_w;
+	static int acc_x, acc_y;
 	static int abs_x, abs_y, abs_p, abs_w;
 	static int oabs_x, oabs_y;
 	static int button, nfingers;
-	static bool touch, otouch;
+	static bool touch;
 
-	debug("received event 0x%x, 0x%x, %d", ie->type, ie->code, ie->value);
+	if (debug > 1)
+		debug("received event 0x%02x, 0x%04x, %d",
+		    ie->type, ie->code, ie->value);
 
 	switch (ie->type) {
 	case EV_REL:
@@ -1276,7 +1413,6 @@ r_protocol(int rtype, struct input_event *ie, mousestatus_t *act)
 			button |= ((!!ie->value) << (ie->code - BTN_LEFT));
 			break;
 		}
-
 		break;
 	}
 
@@ -1288,28 +1424,70 @@ r_protocol(int rtype, struct input_event *ie, mousestatus_t *act)
 	 * assembly full package
 	 */
 
-	act->obutton = act->button;
+	if (!synhw.cap_pressure && touch)
+	 	abs_p = MAX(syninfo.min_pressure, syninfo.tap_threshold);
+	if (synhw.cap_touch & !touch)
+		abs_p = 0;
 
+	act->obutton = act->button;
 	act->button = butmapev[button & MOUSE_SYS_STDBUTTONS];
 	act->button |= (button & MOUSE_SYS_EXTBUTTONS);
-	switch (rtype) {
-	case MOUSE_PROTO_MOUSE:
-		debug("assembled full packet %d,%d,%d", rel_x, rel_y, rel_z);
-		act->dx = rel_x;
-		act->dy = rel_y;
-		act->dz = rel_z;
-		break;
-	case MOUSE_PROTO_TOUCHPAD:
-		debug("assembled full packet %d,%d,%d,%d", abs_x, abs_y, abs_p,
-		    abs_w);
-		if (touch && otouch) {
-			act->dx = abs_x - oabs_x;
-			act->dy = abs_y - oabs_y;
-		}
+
+	if (rodent.rtype == MOUSE_PROTO_TOUCHPAD) {
+		debug("absolute data %d,%d,%d,%d", abs_x, abs_y, abs_p, abs_w);
+		rel_x = abs_x - oabs_x;
+		rel_y = abs_y - oabs_y;
 		oabs_x = abs_x;
 		oabs_y = abs_y;
-		otouch = touch;
+		switch (r_gestures(abs_x, abs_y, abs_p, abs_w, nfingers,
+		    &ie->time, act, &rodent.idletimeout)) {
+		case GEST_IGNORE:
+			rel_x = -acc_x;
+			rel_y = -acc_y;
+			rel_z = 0;
+			acc_x = acc_y = 0;
+			break;
+		case GEST_ACCUMULATE:	/* Revertable pointer movement. */
+			acc_x += rel_x;
+			acc_y += rel_y;
+			break;
+		case GEST_MOVE:		/* Pointer movement. */
+			acc_x = acc_y = 0;
+			break;
+		case GEST_VSCROLL:	/* Vertical scrolling. */
+			if (syninfo.natural_scroll)
+				rel_z = -rel_y;
+			else
+				rel_z = rel_y;
+			rel_x = -acc_x;
+			rel_y = -acc_y;
+			acc_x = acc_y = 0;
+			break;
+		case GEST_HSCROLL:	/* Horizontal scrolling. */
+/*
+			if (rel_x != 0) {
+				if (syninfo.natural_scroll)
+					act->button |= (rel_x > 0)
+					    ? MOUSE_BUTTON6DOWN
+					    : MOUSE_BUTTON7DOWN;
+				else
+					act->button |= (rel_x > 0)
+					    ? MOUSE_BUTTON7DOWN
+					    : MOUSE_BUTTON6DOWN;
+			}
+*/
+			rel_x = -acc_x;
+			rel_y = -acc_y;
+			acc_x = acc_y = 0;
+			break;
+		}
 	}
+
+	debug("assembled full packet %d,%d,%d", rel_x, rel_y, rel_z);
+	act->dx = rel_x;
+	act->dy = rel_y;
+	act->dz = rel_z;
+	rel_x = rel_y = rel_z = 0;
 
 	/*
 	 * We don't reset pBufP here yet, as there may be an additional data
@@ -1616,4 +1794,364 @@ r_click(mousestatus_t *act)
 	button <<= 1;
 	mask >>= 1;
     }
+}
+
+static enum gesture
+r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
+    mousestatus_t *ms, int *idletimeout)
+{
+	struct gesture_state *gest = &gesture;
+	int dx, dy;
+
+	/*
+	 * Check pressure to detect a real wanted action on the
+	 * touchpad.
+	 */
+	if (z >= syninfo.min_pressure) {
+		bool two_finger_scroll;
+		bool three_finger_drag;
+		int start_x, start_y;
+		int max_width, max_pressure;
+		int margin_top, margin_right, margin_bottom, margin_left;
+		int vscroll_hor_area, vscroll_ver_area;
+		int max_x, max_y, min_x, min_y;
+		int tap_timeout;
+
+		/* XXX Verify values? */
+		two_finger_scroll = syninfo.two_finger_scroll;
+		three_finger_drag = syninfo.three_finger_drag;
+		max_width = syninfo.max_width;
+		max_pressure = syninfo.max_pressure;
+		margin_top = syninfo.margin_top;
+		margin_right = syninfo.margin_right;
+		margin_bottom = syninfo.margin_bottom;
+		margin_left = syninfo.margin_left;
+		vscroll_hor_area = syninfo.vscroll_hor_area;
+		vscroll_ver_area = syninfo.vscroll_ver_area;
+		tap_timeout = syninfo.tap_timeout;
+
+		max_x = synhw.max_x;
+		max_y = synhw.max_y;
+		min_x = synhw.min_x;
+		min_y = synhw.min_y;
+
+		/* Palm detection. */
+		if (!(
+		    (nfingers != 1) || (synhw.cap_width && w <= max_width) ||
+		    (!synhw.cap_width && z <= max_pressure))) {
+			/*
+			 * We consider the packet irrelevant for the current
+			 * action when:
+			 *  - there is a single active touch
+			 *  - the width isn't comprised in:
+			 *    [0; max_width]
+			 *  - the pressure isn't comprised in:
+			 *    [min_pressure; max_pressure]
+			 *
+			 *  Note that this doesn't terminate the current action.
+			 */
+			debug("palm detected! (%d)\n", w);
+			return(GEST_IGNORE);
+		}
+
+		/*
+		 * Limit the coordinates to the specified margins because
+		 * this area isn't very reliable.
+		 */
+		if (margin_left != 0 && x0 <= min_x + margin_left)
+			x0 = min_x + margin_left;
+		else if (margin_right != 0 && x0 >= max_x - margin_right)
+			x0 = max_x - margin_right;
+		if (margin_bottom != 0 && y0 <= min_y + margin_bottom)
+			y0 = min_y + margin_bottom;
+		else if (margin_top != 0 && y0 >= max_y - margin_top)
+			y0 = max_y - margin_top;
+
+		debug("packet: [%d, %d], %d, %d", x0, y0, z, w);
+
+		/*
+		 * If the action is just beginning, init the structure and
+		 * compute tap timeout.
+		 */
+		if (!gest->fingerdown) {
+			debug("----");
+
+			/* Reset pressure peak. */
+			gest->zmax = 0;
+
+			/* Reset fingers count. */
+			gest->fingers_nb = 0;
+
+			/* Reset virtual scrolling state. */
+			gest->in_vscroll = 0;
+
+			/* Compute tap timeout. */
+			if (tap_timeout != 0) {
+				gest->taptimeout = (struct timeval) {
+					.tv_sec  = tap_timeout / 1000,
+					.tv_usec = tap_timeout % 1000 * 1000,
+				};
+				tvadd(&gest->taptimeout, time);
+			} else
+				tvclr(&gest->taptimeout);
+
+			gest->startdelay = (struct timeval) {
+				.tv_sec  = 0,
+				.tv_usec = 25000,
+			};
+			tvadd(&gest->startdelay, time);
+
+			gest->fingerdown = true;
+
+			gest->start_x = x0;
+			gest->start_y = y0;
+		}
+
+		gest->prev_x = x0;
+		gest->prev_y = y0;
+
+		start_x = gest->start_x;
+		start_y = gest->start_y;
+
+		/* Process ClickPad softbuttons */
+		if (synhw.is_clickpad && ms->button & MOUSE_BUTTON1DOWN) {
+			int y_ok, center_bt, center_x, right_bt, right_x;
+			y_ok = syninfo.softbuttons_y < 0
+			    ? start_y < min_y - syninfo.softbuttons_y
+			    : start_y > max_y - syninfo.softbuttons_y;
+
+			center_bt = MOUSE_BUTTON2DOWN;
+			center_x = min_x + syninfo.softbutton2_x;
+			right_bt = MOUSE_BUTTON3DOWN;
+			right_x = min_x + syninfo.softbutton3_x;
+
+			if (center_x > 0 && right_x > 0 && center_x > right_x) {
+				center_bt = MOUSE_BUTTON3DOWN;
+				center_x = min_x + syninfo.softbutton3_x;
+				right_bt = MOUSE_BUTTON2DOWN;
+				right_x = min_x + syninfo.softbutton2_x;
+			}
+
+			if (right_x > 0 && start_x > right_x && y_ok)
+				ms->button = (ms->button &
+				    ~MOUSE_BUTTON1DOWN) | right_bt;
+			else if (center_x > 0 && start_x > center_x && y_ok)
+				ms->button = (ms->button &
+				    ~MOUSE_BUTTON1DOWN) | center_bt;
+		}
+
+		/* If in tap-hold or three fingers, add the recorded button. */
+		if (gest->in_taphold || (nfingers == 3 && three_finger_drag))
+			ms->button |= gest->tap_button;
+
+		/*
+		 * For tap, we keep the maximum number of fingers and the
+		 * pressure peak.
+		 */
+		gest->fingers_nb = MAX(nfingers, gest->fingers_nb);
+		gest->zmax = MAX(z, gest->zmax);
+
+		/* Ignore few events at beginning. They are often noisy */
+		if (tvcmp(time, &gest->startdelay, <=)) {
+			gest->start_x = x0;
+			gest->start_y = y0;
+			return (GEST_IGNORE);
+		}
+
+		dx = -1;
+		dy = -1;
+
+		/* Is a scrolling action occurring? */
+		if (!gest->in_taphold && !ms->button &&
+		    (!gest->in_vscroll || two_finger_scroll)) {
+			/*
+			 * A scrolling action must not conflict with a tap
+			 * action. Here are the conditions to consider a
+			 * scrolling action:
+			 *  - the action in a configurable area
+			 *  - one of the following:
+			 *     . the distance between the last packet and the
+			 *       first should be above a configurable minimum
+			 *     . tap timed out
+			 */
+			dx = abs(x0 - start_x);
+			dy = abs(y0 - start_y);
+
+			if (tvcmp(time, &gest->taptimeout, >) ||
+			    dx >= syninfo.vscroll_min_delta ||
+			    dy >= syninfo.vscroll_min_delta) {
+				/*
+				 * Handle two finger scrolling.
+				 * Note that we don't rely on fingers_nb
+				 * as that keeps the maximum number of fingers.
+				 */
+				if (two_finger_scroll) {
+					if (nfingers == 2) {
+						gest->in_vscroll += dy ? 2 : 0;
+						gest->in_vscroll += dx ? 1 : 0;
+					}
+				} else {
+					/* Check for horizontal scrolling. */
+					if ((vscroll_hor_area > 0 &&
+					    start_y <=
+					     min_y + vscroll_hor_area) ||
+					    (vscroll_hor_area < 0 &&
+					    start_y >=
+					     max_y + vscroll_hor_area))
+						gest->in_vscroll += 2;
+
+					/* Check for vertical scrolling. */
+					if ((vscroll_ver_area > 0 &&
+					    start_x <=
+					     min_x + vscroll_ver_area) ||
+					    (vscroll_ver_area < 0 &&
+					     start_x >=
+					     max_x + vscroll_ver_area))
+						gest->in_vscroll += 1;
+				}
+				/* Avoid conflicts if area overlaps. */
+				if (gest->in_vscroll >= 3)
+					gest->in_vscroll = (dx > dy) ? 2 : 1;
+			}
+		}
+		/*
+		 * Reset two finger scrolling when the number of fingers
+		 * is different from two or any button is pressed.
+		 */
+		if (two_finger_scroll && gest->in_vscroll != 0 &&
+		    (nfingers != 2 || ms->button))
+			gest->in_vscroll = 0;
+
+		debug("virtual scrolling: %s "
+			"(direction=%d, dx=%d, dy=%d, fingers=%d)",
+			gest->in_vscroll != 0 ? "YES" : "NO",
+			gest->in_vscroll, dx, dy, gest->fingers_nb);
+
+		switch (gest->in_vscroll) {
+		case 1:
+			return (GEST_VSCROLL);
+		case 2:
+			return (GEST_HSCROLL);
+		default:
+			if (tvcmp(time, &gest->taptimeout, <=))
+				return (gest->fingers_nb > 1 ?
+				    GEST_IGNORE : GEST_ACCUMULATE);
+			else
+				return (GEST_MOVE);
+		}
+	}
+
+	/*
+	 * Handle a case when clickpad pressure drops before than
+	 * button up event when surface is released after click.
+	 * It interferes with softbuttons.
+	 */
+	if (synhw.is_clickpad && syninfo.softbuttons_y != 0)
+		ms->button &= ~MOUSE_BUTTON1DOWN;
+
+	if (gest->fingerdown) {
+		/*
+		 * An action is currently taking place but the pressure
+		 * dropped under the minimum, putting an end to it.
+		 */
+		int tap_max_delta;
+
+		dx = abs(gest->prev_x - gest->start_x);
+		dy = abs(gest->prev_y - gest->start_y);
+
+		/* Max delta is disabled for multi-fingers tap. */
+		if (gest->fingers_nb > 1)
+			tap_max_delta = MAX(dx, dy);
+		else
+			tap_max_delta = syninfo.tap_max_delta;
+
+		gest->fingerdown = false;
+
+		/* Check for tap. */
+		debug("zmax=%d, dx=%d, dy=%d, delta=%d, fingers=%d",
+		    gest->zmax, dx, dy, tap_max_delta, gest->fingers_nb);
+		if (!gest->in_vscroll && gest->zmax >= syninfo.tap_threshold &&
+		    tvcmp(time, &gest->taptimeout, <=) &&
+		    dx <= tap_max_delta && dy <= tap_max_delta) {
+			/*
+			 * We have a tap if:
+			 *   - the maximum pressure went over tap_threshold
+			 *   - the action ended before tap_timeout
+			 *
+			 * To handle tap-hold, we must delay any button push to
+			 * the next action.
+			 */
+			if (gest->in_taphold) {
+				/*
+				 * This is the second and last tap of a
+				 * double tap action, not a tap-hold.
+				 */
+				gest->in_taphold = false;
+
+				/*
+				 * For double-tap to work:
+				 *   - no button press is emitted (to
+				 *     simulate a button release)
+				 *   - PSM_FLAGS_FINGERDOWN is set to
+				 *     force the next packet to emit a
+				 *     button press)
+				 */
+				debug("button RELEASE: %d", gest->tap_button);
+				gest->fingerdown = true;
+
+				/* Schedule button press on next event */
+				*idletimeout = 0;
+			} else {
+				/*
+				 * This is the first tap: we set the
+				 * tap-hold state and notify the button
+				 * down event.
+				 */
+				gest->in_taphold = true;
+				*idletimeout = syninfo.taphold_timeout;
+				tvadd(&gest->taptimeout, time);
+
+				switch (gest->fingers_nb) {
+				case 3:
+					gest->tap_button =
+					    MOUSE_BUTTON2DOWN;
+					break;
+				case 2:
+					gest->tap_button =
+					    MOUSE_BUTTON3DOWN;
+					break;
+				default:
+					gest->tap_button =
+					    MOUSE_BUTTON1DOWN;
+				}
+				debug("button PRESS: %d", gest->tap_button);
+				ms->button |= gest->tap_button;
+			}
+		} else {
+			/*
+			 * Not enough pressure or timeout: reset
+			 * tap-hold state.
+			 */
+			if (gest->in_taphold) {
+				debug("button RELEASE: %d", gest->tap_button);
+				gest->in_taphold = false;
+			} else {
+				debug("not a tap-hold");
+			}
+		}
+	} else if (!gest->fingerdown && gest->in_taphold) {
+		/*
+		 * For a tap-hold to work, the button must remain down at
+		 * least until timeout (where the in_taphold flags will be
+		 * cleared) or during the next action.
+		 */
+		if (tvcmp(time, &gest->taptimeout, <=)) {
+			ms->button |= gest->tap_button;
+		} else {
+			debug("button RELEASE: %d", gest->tap_button);
+			gest->in_taphold = false;
+		}
+	}
+
+	return (GEST_IGNORE);
 }
