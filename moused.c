@@ -186,6 +186,7 @@ static int	debug = 0;
 static bool	nodaemon = false;
 static bool	background = false;
 static bool	paused = false;
+static bool	grab = false;
 static int	identify = ID_NONE;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
@@ -458,7 +459,7 @@ main(int argc, char *argv[])
     for (i = 0; i < MOUSE_MAXBUTTON; ++i)
 	mstate[i] = &bstate[i];
 
-    while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:cdfhi:m:p:w:z:")) != -1)
+    while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:cdfghi:m:p:w:z:")) != -1)
 	switch(c) {
 
 	case '3':
@@ -511,6 +512,10 @@ main(int argc, char *argv[])
 	case 'f':
 	    nodaemon = true;
 	    break;
+
+		case 'g':
+			grab = true;
+			break;
 
 	case 'i':
 	    if (strcmp(optarg, "all") == 0)
@@ -678,6 +683,12 @@ main(int argc, char *argv[])
 		close(rodent.mfd);
 		rodent.mfd = -1;
 	    }
+		if (rodent.mfd != -1 && grab &&
+		    ioctl(rodent.mfd, EVIOCGRAB, 1) == -1) {
+			logerr(1, "unable to grab %s", rodent.portname);
+			close(rodent.mfd);
+			rodent.mfd = -1;
+		}
 
 	    /* print some information */
 	    if (identify != ID_NONE) {
@@ -1093,7 +1104,7 @@ static void
 usage(void)
 {
     fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n",
-	"usage: moused [-cdf] [-I file]",
+	"usage: moused [-cdfg] [-I file]",
 	"              [-VH [-U threshold]] [-a X[,Y]] [-C threshold] [-m N=M] [-w N]",
 	"              [-z N] [-3 [-E timeout]]",
 	"              [-T distance[,time[,after]]] -p <port>",
