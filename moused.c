@@ -397,19 +397,30 @@ struct drift_xy {
     int x;
     int y;
 };
-static int		drift_distance = 4;	/* max steps X+Y */
-static int		drift_time = 500;	/* in 0.5 sec */
-static struct timespec	drift_time_ts;
-static struct timespec	drift_2time_ts;		/* 2*drift_time */
-static int		drift_after = 4000;	/* 4 sec */
-static struct timespec	drift_after_ts;
-static bool		drift_terminate = false;
-static struct timespec	drift_current_ts;
-static struct timespec	drift_tmp;
-static struct timespec	drift_last_activity = {0, 0};
-static struct timespec	drift_since = {0, 0};
-static struct drift_xy	drift_last = {0, 0};	/* steps in last drift_time */
-static struct drift_xy  drift_previous = {0, 0};	/* steps in prev. drift_time */
+static struct drift {
+	int		distance;	/* max steps X+Y */
+	int		time;		/* ms */
+	struct timespec	time_ts;
+	struct timespec	twotime_ts;	/* 2*drift_time */
+	int		after;		/* ms */
+	struct timespec	after_ts;
+	bool		terminate;
+	struct timespec	current_ts;
+	struct timespec	tmp;
+	struct timespec	last_activity;
+	struct timespec	since;
+	struct drift_xy	last;		/* steps in last drift_time */
+	struct drift_xy	previous;	/* steps in prev. drift_time */
+} drift = {
+	.distance = 4,
+	.time = 500,			/* in 0.5 sec */
+	.after = 4000,			/* 4 sec */
+	.terminate = false,
+	.last_activity = {0, 0},
+	.since = {0, 0},
+	.last = {0, 0},
+	.previous = {0, 0},
+};
 
 /* function prototypes */
 
@@ -433,6 +444,7 @@ static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
 static void	r_timestamp(mousestatus_t *act);
 static bool	r_timeout(void);
 static void	r_click(mousestatus_t *act);
+static bool	r_drift(struct drift *, mousestatus_t *);
 static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
 		    struct timeval *time, mousestatus_t *ms, int *idletimout);
 
@@ -596,21 +608,21 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'T':
-	    drift_terminate = true;
-	    sscanf(optarg, "%d,%d,%d", &drift_distance, &drift_time,
-		&drift_after);
-	    if (drift_distance <= 0 || drift_time <= 0 || drift_after <= 0) {
+	    drift.terminate = true;
+	    sscanf(optarg, "%d,%d,%d", &drift.distance, &drift.time,
+		&drift.after);
+	    if (drift.distance <= 0 || drift.time <= 0 || drift.after <= 0) {
 		warnx("invalid argument `%s'", optarg);
 		usage();
 	    }
 	    debug("terminate drift: distance %d, time %d, after %d",
-		drift_distance, drift_time, drift_after);
-	    drift_time_ts.tv_sec = drift_time / 1000;
-	    drift_time_ts.tv_nsec = (drift_time % 1000) * 1000000;
- 	    drift_2time_ts.tv_sec = (drift_time *= 2) / 1000;
-	    drift_2time_ts.tv_nsec = (drift_time % 1000) * 1000000;
-	    drift_after_ts.tv_sec = drift_after / 1000;
-	    drift_after_ts.tv_nsec = (drift_after % 1000) * 1000000;
+		drift.distance, drift.time, drift.after);
+	    drift.time_ts.tv_sec = drift.time / 1000;
+	    drift.time_ts.tv_nsec = (drift.time % 1000) * 1000000;
+ 	    drift.twotime_ts.tv_sec = (drift.time *= 2) / 1000;
+	    drift.twotime_ts.tv_nsec = (drift.time % 1000) * 1000000;
+	    drift.after_ts.tv_sec = drift.after / 1000;
+	    drift.after_ts.tv_nsec = (drift.after % 1000) * 1000000;
 	    break;
 
 	case 'V':
@@ -1007,44 +1019,15 @@ moused(void)
 		}
 	    }
 
-	    if (drift_terminate) {
-		if ((flags & MOUSE_POSCHANGED) == 0 || action.dz || action2.dz)
-		    drift_last_activity = drift_current_ts;
-		else {
-		    /* X or/and Y movement only - possibly drift */
-		    tssub(&drift_current_ts, &drift_last_activity, &drift_tmp);
-		    if (tscmp(&drift_tmp, &drift_after_ts, >)) {
-			tssub(&drift_current_ts, &drift_since, &drift_tmp);
-			if (tscmp(&drift_tmp, &drift_time_ts, <)) {
-			    drift_last.x += action2.dx;
-			    drift_last.y += action2.dy;
-			} else {
-			    /* discard old accumulated steps (drift) */
-			    if (tscmp(&drift_tmp, &drift_2time_ts, >))
-				drift_previous.x = drift_previous.y = 0;
-			    else
-				drift_previous = drift_last;
-			    drift_last.x = action2.dx;
-			    drift_last.y = action2.dy;
-			    drift_since = drift_current_ts;
+		if (drift.terminate) {
+			if ((flags & MOUSE_POSCHANGED) == 0 ||
+			    action.dz || action2.dz)
+				drift.last_activity = drift.current_ts;
+			else {
+				if (r_drift (&drift, &action2))
+					continue;
 			}
-			if (abs(drift_last.x) + abs(drift_last.y)
-			  > drift_distance) {
-			    /* real movement, pass all accumulated steps */
-			    action2.dx = drift_previous.x + drift_last.x;
-			    action2.dy = drift_previous.y + drift_last.y;
-			    /* and reset accumulators */
-			    tsclr(&drift_since);
-			    drift_last.x = drift_last.y = 0;
-			    /* drift_previous will be cleared at next movement*/
-			    drift_last_activity = drift_current_ts;
-			} else {
-			    continue;   /* don't pass current movement to
-					 * console driver */
-			}
-		    }
 		}
-	    }
 
 		/* Defer clicks until we aren't VirtualScroll'ing. */
 		if (scroll_state == SCROLL_NOTSCROLLING)
@@ -1466,6 +1449,43 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	return (act->flags);
 }
 
+static bool
+r_drift (struct drift *drift, mousestatus_t *act)
+{
+	/* X or/and Y movement only - possibly drift */
+	tssub(&drift->current_ts, &drift->last_activity, &drift->tmp);
+	if (tscmp(&drift->tmp, &drift->after_ts, >)) {
+		tssub(&drift->current_ts, &drift->since, &drift->tmp);
+		if (tscmp(&drift->tmp, &drift->time_ts, <)) {
+			drift->last.x += act->dx;
+			drift->last.y += act->dy;
+		} else {
+			/* discard old accumulated steps (drift) */
+			if (tscmp(&drift->tmp, &drift->twotime_ts, >))
+				drift->previous.x = drift->previous.y = 0;
+			else
+				drift->previous = drift->last;
+			drift->last.x = act->dx;
+			drift->last.y = act->dy;
+			drift->since = drift->current_ts;
+		}
+		if (abs(drift->last.x) + abs(drift->last.y) > drift->distance){
+			/* real movement, pass all accumulated steps */
+			act->dx = drift->previous.x + drift->last.x;
+			act->dy = drift->previous.y + drift->last.y;
+			/* and reset accumulators */
+			tsclr(&drift->since);
+			drift->last.x = drift->last.y = 0;
+			/* drift_previous will be cleared at next movement*/
+			drift->last_activity = drift->current_ts;
+		} else {
+			return (true);	/* don't pass current movement to
+					 * console driver */
+		}
+	}
+	return (false);
+}
+
 static int
 r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
 {
@@ -1662,7 +1682,7 @@ r_timestamp(mousestatus_t *act)
 #endif
 
     clock_gettime(CLOCK_MONOTONIC_FAST, &ts1);
-    drift_current_ts = ts1;
+    drift.current_ts = ts1;
 
     /* double click threshold */
     ts2.tv_sec = rodent.clickthreshold / 1000;
