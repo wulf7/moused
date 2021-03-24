@@ -94,9 +94,6 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 /* Abort 3-button emulation delay after this many movement events. */
 #define BUTTON2_MAXMOVE	3
 
-#define TRUE		1
-#define FALSE		0
-
 #define MOUSE_XAXIS	(-1)
 #define MOUSE_YAXIS	(-2)
 
@@ -186,9 +183,9 @@ typedef struct {
 /* global variables */
 
 static int	debug = 0;
-static int	nodaemon = FALSE;
-static int	background = FALSE;
-static int	paused = FALSE;
+static bool	nodaemon = false;
+static bool	background = false;
+static bool	paused = false;
 static int	identify = ID_NONE;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
@@ -367,28 +364,28 @@ static struct {
     int s[A_TIMEOUT + 1];
     int buttons;
     int mask;
-    int timeout;
+    bool timeout;
 } states[10] = {
     /* S0 */
-    { { S0, S2, S1, S3, S0 }, 0, ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN), FALSE },
+    { { S0, S2, S1, S3, S0 }, 0, ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN), false },
     /* S1 */
-    { { S4, S2, S1, S3, S5 }, 0, ~MOUSE_BUTTON1DOWN, FALSE },
+    { { S4, S2, S1, S3, S5 }, 0, ~MOUSE_BUTTON1DOWN, false },
     /* S2 */
-    { { S8, S2, S1, S3, S6 }, 0, ~MOUSE_BUTTON3DOWN, FALSE },
+    { { S8, S2, S1, S3, S6 }, 0, ~MOUSE_BUTTON3DOWN, false },
     /* S3 */
-    { { S0, S9, S9, S3, S3 }, MOUSE_BUTTON2DOWN, ~0, FALSE },
+    { { S0, S9, S9, S3, S3 }, MOUSE_BUTTON2DOWN, ~0, false },
     /* S4 */
-    { { S0, S2, S1, S3, S0 }, MOUSE_BUTTON1DOWN, ~0, TRUE },
+    { { S0, S2, S1, S3, S0 }, MOUSE_BUTTON1DOWN, ~0, true },
     /* S5 */
-    { { S0, S2, S5, S7, S5 }, MOUSE_BUTTON1DOWN, ~0, FALSE },
+    { { S0, S2, S5, S7, S5 }, MOUSE_BUTTON1DOWN, ~0, false },
     /* S6 */
-    { { S0, S6, S1, S7, S6 }, MOUSE_BUTTON3DOWN, ~0, FALSE },
+    { { S0, S6, S1, S7, S6 }, MOUSE_BUTTON3DOWN, ~0, false },
     /* S7 */
-    { { S0, S6, S5, S7, S7 }, MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN, ~0, FALSE },
+    { { S0, S6, S5, S7, S7 }, MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN, ~0, false },
     /* S8 */
-    { { S0, S2, S1, S3, S0 }, MOUSE_BUTTON3DOWN, ~0, TRUE },
+    { { S0, S2, S1, S3, S0 }, MOUSE_BUTTON3DOWN, ~0, true },
     /* S9 */
-    { { S0, S9, S9, S3, S9 }, 0, ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN), FALSE },
+    { { S0, S9, S9, S3, S9 }, 0, ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN), false },
 };
 static int		mouse_button_state;
 static struct timespec	mouse_button_state_ts;
@@ -406,7 +403,7 @@ static struct timespec	drift_time_ts;
 static struct timespec	drift_2time_ts;		/* 2*drift_time */
 static int		drift_after = 4000;	/* 4 sec */
 static struct timespec	drift_after_ts;
-static int		drift_terminate = FALSE;
+static bool		drift_terminate = false;
 static struct timespec	drift_current_ts;
 static struct timespec	drift_tmp;
 static struct timespec	drift_last_activity = {0, 0};
@@ -431,10 +428,10 @@ static const char *r_name(int type);
 static void	r_init(void);
 static int	r_protocol(struct input_event *b, mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
-static int	r_installmap(char *arg);
+static bool	r_installmap(char *arg);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
 static void	r_timestamp(mousestatus_t *act);
-static int	r_timeout(void);
+static bool	r_timeout(void);
 static void	r_click(mousestatus_t *act);
 static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
 		    struct timeval *time, mousestatus_t *ms, int *idletimout);
@@ -500,7 +497,7 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'f':
-	    nodaemon = TRUE;
+	    nodaemon = true;
 	    break;
 
 	case 'i':
@@ -516,7 +513,7 @@ main(int argc, char *argv[])
 		warnx("invalid argument `%s'", optarg);
 		usage();
 	    }
-	    nodaemon = TRUE;
+	    nodaemon = true;
 	    break;
 
 	case 'm':
@@ -599,7 +596,7 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'T':
-	    drift_terminate = TRUE;
+	    drift_terminate = true;
 	    sscanf(optarg, "%d,%d,%d", &drift_distance, &drift_time,
 		&drift_after);
 	    if (drift_distance <= 0 || drift_time <= 0 || drift_after <= 0) {
@@ -809,7 +806,7 @@ moused(void)
 	    errno = saved_errno;
 	    logerr(1, "failed to become a daemon");
 	} else {
-	    background = TRUE;
+	    background = true;
 	    pidfile_write(pfh);
 	}
     }
@@ -1158,12 +1155,12 @@ bit_find(bitstr_t *array, int start, int stop)
 static int
 r_identify_evdev(bitstr_t *key_bits, bitstr_t *rel_bits, bitstr_t *abs_bits)
 {
-	int has_keys = bit_find(key_bits, 0, BTN_MISC);
-	int has_buttons = bit_find(key_bits, BTN_MISC, BTN_JOYSTICK);
-	int has_lmr = bit_find(key_bits, BTN_LEFT, BTN_MIDDLE + 1);
-	int has_rel_axes = bit_find(rel_bits, 0, REL_CNT);
-	int has_abs_axes = bit_find(abs_bits, 0, ABS_CNT);
-	int has_mt = bit_find(abs_bits, ABS_MT_SLOT, ABS_CNT);
+	bool has_keys = bit_find(key_bits, 0, BTN_MISC);
+	bool has_buttons = bit_find(key_bits, BTN_MISC, BTN_JOYSTICK);
+	bool has_lmr = bit_find(key_bits, BTN_LEFT, BTN_MIDDLE + 1);
+	bool has_rel_axes = bit_find(rel_bits, 0, REL_CNT);
+	bool has_abs_axes = bit_find(abs_bits, 0, ABS_CNT);
+	bool has_mt = bit_find(abs_bits, ABS_MT_SLOT, ABS_CNT);
 
 	if (has_abs_axes) {
 		if (has_mt && !has_buttons) {
@@ -1171,7 +1168,7 @@ r_identify_evdev(bitstr_t *key_bits, bitstr_t *rel_bits, bitstr_t *abs_bits)
 			if (bit_test(key_bits, BTN_JOYSTICK)) {
 				return (MOUSE_PROTO_JOYSTICK);
 			} else {
-				has_buttons = TRUE;
+				has_buttons = true;
 			}
 		}
 
@@ -1472,7 +1469,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 static int
 r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
 {
-    int changed;
+    bool changed;
     int flags;
 
     a2->dx = a1->dx;
@@ -1481,7 +1478,7 @@ r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
     a2->obutton = a2->button;
     a2->button = a1->button;
     a2->flags = a1->flags;
-    changed = FALSE;
+    changed = false;
 
     if (rodent.flags & Emulate3Button) {
 	if (debug > 2)
@@ -1500,13 +1497,13 @@ r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
 			mouse_move_delayed = 0;
 			mouse_button_state =
 			    states[mouse_button_state].s[A_TIMEOUT];
-			changed = TRUE;
+			changed = true;
 		} else
 			a2->dx = a2->dy = 0;
 	} else
 		mouse_move_delayed = 0;
 	if (mouse_button_state != states[mouse_button_state].s[trans])
-		changed = TRUE;
+		changed = true;
 	if (changed)
 		clock_gettime(CLOCK_MONOTONIC_FAST, &mouse_button_state_ts);
 	mouse_button_state = states[mouse_button_state].s[trans];
@@ -1545,7 +1542,7 @@ skipspace(char *s)
     return (s);
 }
 
-static int
+static bool
 r_installmap(char *arg)
 {
     int pbutton;
@@ -1559,7 +1556,7 @@ r_installmap(char *arg)
 	    ++arg;
 	arg = skipspace(arg);
 	if ((arg <= s) || (*arg != '='))
-	    return (FALSE);
+	    return (false);
 	lbutton = atoi(s);
 
 	arg = skipspace(++arg);
@@ -1567,18 +1564,18 @@ r_installmap(char *arg)
 	while (isdigit(*arg))
 	    ++arg;
 	if ((arg <= s) || (!isspace(*arg) && (*arg != '\0')))
-	    return (FALSE);
+	    return (false);
 	pbutton = atoi(s);
 
 	if ((lbutton <= 0) || (lbutton > MOUSE_MAXBUTTON))
-	    return (FALSE);
+	    return (false);
 	if ((pbutton <= 0) || (pbutton > MOUSE_MAXBUTTON))
-	    return (FALSE);
+	    return (false);
 	p2l[pbutton - 1] = 1 << (lbutton - 1);
 	mstate[lbutton - 1] = &bstate[pbutton - 1];
     }
 
-    return (TRUE);
+    return (true);
 }
 
 static void
@@ -1713,7 +1710,7 @@ r_timestamp(mousestatus_t *act)
     }
 }
 
-static int
+static bool
 r_timeout(void)
 {
     struct timespec ts;
@@ -1721,7 +1718,7 @@ r_timeout(void)
     struct timespec ts2;
 
     if (states[mouse_button_state].timeout)
-	return (TRUE);
+	return (true);
     clock_gettime(CLOCK_MONOTONIC_FAST, &ts1);
     ts2.tv_sec = rodent.button2timeout / 1000;
     ts2.tv_nsec = (rodent.button2timeout % 1000) * 1000000;
