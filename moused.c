@@ -190,7 +190,6 @@ static int	nodaemon = FALSE;
 static int	background = FALSE;
 static int	paused = FALSE;
 static int	identify = ID_NONE;
-static int	extioctl = FALSE;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
 
@@ -832,10 +831,6 @@ moused(void)
 	zstate[i].ts = mouse_button_state_ts;
     }
 
-    /* choose which ioctl command to use */
-    mouse.operation = MOUSE_MOTION_EVENT;
-    extioctl = (ioctl(rodent.cfd, CONS_MOUSECTL, &mouse) == 0);
-
     /* process mouse data */
     for (;;) {
 
@@ -1054,41 +1049,23 @@ moused(void)
 		}
 	    }
 
-	    if (extioctl) {
 		/* Defer clicks until we aren't VirtualScroll'ing. */
 		if (scroll_state == SCROLL_NOTSCROLLING)
-		    r_click(&action2);
+			r_click(&action2);
 
 		if (action2.flags & MOUSE_POSCHANGED) {
-		    mouse.operation = MOUSE_MOTION_EVENT;
-		    mouse.u.data.buttons = action2.button;
-		    if (rodent.flags & ExponentialAcc) {
-			expoacc(action2.dx, action2.dy, action2.dz,
-			    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
-		    }
-		    else {
-			linacc(action2.dx, action2.dy, action2.dz,
-			    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
-		    }
-		    if (debug < 2)
-			if (!paused)
+			mouse.operation = MOUSE_MOTION_EVENT;
+			mouse.u.data.buttons = action2.button;
+			if (rodent.flags & ExponentialAcc) {
+				expoacc(action2.dx, action2.dy, action2.dz,
+				    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
+			} else {
+				linacc(action2.dx, action2.dy, action2.dz,
+				    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
+			}
+			if (debug < 2 && !paused)
 				ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
 		}
-	    } else {
-		mouse.operation = MOUSE_ACTION;
-		mouse.u.data.buttons = action2.button;
-		if (rodent.flags & ExponentialAcc) {
-		    expoacc(action2.dx, action2.dy, action2.dz,
-			&mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
-		}
-		else {
-		    linacc(action2.dx, action2.dy, action2.dz,
-			&mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
-		}
-		if (debug < 2)
-		    if (!paused)
-			ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
-	    }
 
 	    /*
 	     * If the Z axis movement is mapped to an imaginary physical
@@ -1102,16 +1079,7 @@ moused(void)
 		debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
 		    action2.button, action2.dx, action2.dy, action2.dz);
 
-		if (extioctl) {
-		    r_click(&action2);
-		} else {
-		    mouse.operation = MOUSE_ACTION;
-		    mouse.u.data.buttons = action2.button;
-		    mouse.u.data.x = mouse.u.data.y = mouse.u.data.z = 0;
-		    if (debug < 2)
-			if (!paused)
-			    ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
-		}
+		r_click(&action2);
 	    }
 	}
     }
