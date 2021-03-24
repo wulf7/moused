@@ -90,6 +90,9 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 #define DFLT_BUTTON2TIMEOUT	 100	/* 0.1 second */
 #define DFLT_SCROLLTHRESHOLD	   3	/* 3 pixels */
 #define DFLT_SCROLLSPEED	   2	/* 2 pixels */
+#define	DFLT_MOUSE_RESOLUTION	   8	/* dpmm, == 200dpi */
+#define	DFLT_TPAD_RESOLUTION	  40	/* dpmm, typical X res for Synaptics */
+#define	DFLT_LINEHEIGHT		  10	/* pixels per line */
 
 /* Abort 3-button emulation delay after this many movement events. */
 #define BUTTON2_MAXMOVE	3
@@ -236,6 +239,8 @@ static struct tpcaps {
 	int	max_x;
 	int	min_y;
 	int	max_y;
+	int	res_x;	/* dots per mm */
+	int	res_y;	/* dots per mm */
 } synhw;
 
 static struct tpinfo {
@@ -251,11 +256,11 @@ static struct tpinfo {
 	int	margin_left;		/* Left margin */
 	int	tap_timeout;		/* */
 	int	tap_threshold;		/* Minimum pressure to detect a tap */
-	int	tap_max_delta;		/* Length of segments above which a tap is ignored */
+	float	tap_max_delta;		/* Length of segments above which a tap is ignored */
 	int	taphold_timeout;	/* Maximum elapsed time between two taps to consider a tap-hold action */
-	int	vscroll_ver_area;	/* Area reserved for vertical virtual scrolling */
-	int	vscroll_hor_area;	/* Area reserved for horizontal virtual scrolling */
-	int	vscroll_min_delta;	/* Minimum movement to consider virtual scrolling */
+	float	vscroll_ver_area;	/* Area reserved for vertical virtual scrolling */
+	float	vscroll_hor_area;	/* Area reserved for horizontal virtual scrolling */
+	float	vscroll_min_delta;	/* Minimum movement to consider virtual scrolling */
 	int	softbuttons_y;		/* Vertical size of softbuttons area */
 	int	softbutton2_x;		/* Horizontal offset of 2-nd softbutton left edge */
 	int	softbutton3_x;		/* Horizontal offset of 3-rd softbutton left edge */
@@ -268,11 +273,11 @@ static struct tpinfo {
 	.max_width = 16,
 	.tap_timeout = 150,		/* ms */
 	.tap_threshold = 50,		/* ms */
-	.tap_max_delta = 80,
-	.taphold_timeout = 200,
-	.vscroll_min_delta = 50,
-	.vscroll_hor_area = -600,
-	.vscroll_ver_area = 0,
+	.tap_max_delta = 2.0,		/* mm */
+	.taphold_timeout = 200,		/* ms */
+	.vscroll_min_delta = 1.25,	/* mm */
+	.vscroll_hor_area = -15.0,	/* mm */
+	.vscroll_ver_area = 0.0,	/* mm */
 };
 
 static struct gesture_state {
@@ -1200,7 +1205,7 @@ r_identify(void)
 	bitstr_t bit_decl(rel_bits, REL_CNT); /* Evdev capabilities */
 	bitstr_t bit_decl(abs_bits, ABS_CNT); /* */
 	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
-	int sz_x, sz_y, res_x, res_y;
+	int sz_x, sz_y;
 
 	/* maybe this is a evdev mouse... */
 	if (ioctl(rodent.mfd, EVIOCGNAME(
@@ -1223,13 +1228,15 @@ r_identify(void)
 		synhw.min_x = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
 		synhw.max_x = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
 		sz_x = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
-		res_x = ai.resolution;
+		synhw.res_x = ai.resolution == 0 ?
+		    DFLT_TPAD_RESOLUTION : ai.resolution;
 		if (ioctl(rodent.mfd, EVIOCGABS(ABS_Y), &ai) < 0)
 			return (MOUSE_PROTO_UNKNOWN);
 		synhw.min_y = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
 		synhw.max_y = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
 		sz_y = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
-		res_y = ai.resolution;
+		synhw.res_y = ai.resolution == 0 ?
+		    DFLT_TPAD_RESOLUTION : ai.resolution;
 		if (bit_test(key_bits, BTN_TOUCH))
 			synhw.cap_touch = true;
 		if (bit_test(abs_bits, ABS_PRESSURE))
@@ -1249,16 +1256,13 @@ r_identify(void)
 			syninfo.softbutton2_x = sz_x * 11 / 25;
 			syninfo.softbutton3_x = sz_x * 14 / 25;
 		}
-		if (res_x != 0 && res_y != 0)
-			rodent.accely *= ((float)res_x / (float)res_y);
-		if (res_x == 0)
-			res_x = 40;
-		rodent.accelx *= res_x;
-		rodent.accelx /= 200;
-		rodent.accely *= res_x;
-		rodent.accely /= 200;
-		rodent.accelz *= res_x;
-		rodent.accelz /= 2000;
+		/* Normalize pointer movement to match 200dpi mouse */
+		rodent.accelx *= DFLT_MOUSE_RESOLUTION;
+		rodent.accelx /= synhw.res_x;
+		rodent.accely *= DFLT_MOUSE_RESOLUTION;
+		rodent.accely /= synhw.res_y;
+		rodent.accelz *= DFLT_MOUSE_RESOLUTION;
+		rodent.accelz /= (synhw.res_x * DFLT_LINEHEIGHT);
 		/* FALLTHROUGH */
 	case MOUSE_PROTO_MOUSE:
 		break;
@@ -1817,8 +1821,8 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		margin_right = syninfo.margin_right;
 		margin_bottom = syninfo.margin_bottom;
 		margin_left = syninfo.margin_left;
-		vscroll_hor_area = syninfo.vscroll_hor_area;
-		vscroll_ver_area = syninfo.vscroll_ver_area;
+		vscroll_hor_area = syninfo.vscroll_hor_area * synhw.res_x;
+		vscroll_ver_area = syninfo.vscroll_ver_area * synhw.res_y;;
 		tap_timeout = syninfo.tap_timeout;
 
 		max_x = synhw.max_x;
@@ -1969,8 +1973,8 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 			dy = abs(y0 - start_y);
 
 			if (tvcmp(time, &gest->taptimeout, >) ||
-			    dx >= syninfo.vscroll_min_delta ||
-			    dy >= syninfo.vscroll_min_delta) {
+			    dx >= syninfo.vscroll_min_delta * synhw.res_x ||
+			    dy >= syninfo.vscroll_min_delta * synhw.res_y) {
 				/*
 				 * Handle two finger scrolling.
 				 * Note that we don't rely on fingers_nb
@@ -2045,25 +2049,29 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		 * An action is currently taking place but the pressure
 		 * dropped under the minimum, putting an end to it.
 		 */
-		int tap_max_delta;
+		int tap_max_delta_x, tap_max_delta_y;
 
 		dx = abs(gest->prev_x - gest->start_x);
 		dy = abs(gest->prev_y - gest->start_y);
 
 		/* Max delta is disabled for multi-fingers tap. */
-		if (gest->fingers_nb > 1)
-			tap_max_delta = MAX(dx, dy);
-		else
-			tap_max_delta = syninfo.tap_max_delta;
+		if (gest->fingers_nb > 1) {
+			tap_max_delta_x = dx;
+			tap_max_delta_y = dy;
+		} else {
+			tap_max_delta_x = syninfo.tap_max_delta * synhw.res_x;
+			tap_max_delta_y = syninfo.tap_max_delta * synhw.res_y;
+		}
 
 		gest->fingerdown = false;
 
 		/* Check for tap. */
-		debug("zmax=%d, dx=%d, dy=%d, delta=%d, fingers=%d",
-		    gest->zmax, dx, dy, tap_max_delta, gest->fingers_nb);
+		debug("zmax=%d, dx=%d, dy=%d, deltax=%d, deltay=%d, "
+		    "fingers=%d", gest->zmax, dx, dy, tap_max_delta_x,
+		    tap_max_delta_y, gest->fingers_nb);
 		if (!gest->in_vscroll && gest->zmax >= syninfo.tap_threshold &&
 		    tvcmp(time, &gest->taptimeout, <=) &&
-		    dx <= tap_max_delta && dy <= tap_max_delta) {
+		    dx <= tap_max_delta_x && dy <= tap_max_delta_y) {
 			/*
 			 * We have a tap if:
 			 *   - the maximum pressure went over tap_threshold
