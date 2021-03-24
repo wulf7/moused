@@ -658,15 +658,10 @@ main(int argc, char *argv[])
 	}
     }
 
-    /* the default port name */
-    switch(rodent.rtype) {
-
-    default:
-	if (rodent.portname)
-	    break;
-	warnx("no port name specified");
-	usage();
-    }
+	if (rodent.portname == NULL) {
+		warnx("no port name specified");
+		usage();
+	}
 
 	if (setjmp(env) == 0) {
 	    signal(SIGHUP, hup);
