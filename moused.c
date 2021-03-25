@@ -106,6 +106,8 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 #define HVirtualScroll	0x0040
 #define ExponentialAcc	0x0080
 
+#define	MAX_FINGERS	10
+
 #define ID_NONE		0
 #define ID_PORT		1
 /* Was	ID_IF		2 */
@@ -297,6 +299,31 @@ static struct gesture_state {
 } gesture = {
 	.idletimeout = -1,
 };
+
+struct finger {
+	int	x;
+	int	y;
+	int	p;
+	int	w;
+	int	id;	/* id=0 - no touch, id>1 - touch id */
+};
+
+static struct evdev_state {
+	int		buttons;
+	/* Relative */
+	int		dx;
+	int		dy;
+	int		dz;
+	int		dw;
+	int		acc_dx;
+	int		acc_dy;
+	/* Absolute single-touch */
+	int		nfingers;
+	struct finger	st;
+	/* Absolute multi-touch */
+	int		slot;
+	struct finger	mt[MAX_FINGERS];
+} ev;
 
 static struct rodentparam {
     int flags;
@@ -1303,12 +1330,6 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	    MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN,
 	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN
 	};
-	static int rel_x, rel_y, rel_z, rel_w;
-	static int acc_x, acc_y;
-	static int abs_x, abs_y, abs_p, abs_w;
-	static int oabs_x, oabs_y;
-	static int button, nfingers;
-	static bool touch;
 
 	if (debug > 1)
 		debug("received event 0x%02x, 0x%04x, %d",
@@ -1318,58 +1339,60 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	case EV_REL:
 		switch (ie->code) {
 		case REL_X:
-			rel_x = ie->value;
+			ev.dx += ie->value;
 			break;
 		case REL_Y:
-			rel_y = ie->value;
+			ev.dy += ie->value;
 			break;
 		case REL_WHEEL:
-			rel_z = ie->value;
+			ev.dz += ie->value;
 			break;
 		case REL_HWHEEL:
-			rel_w = ie->value;
+			ev.dw += ie->value;
 			break;
 		}
 		break;
 	case EV_ABS:
 		switch (ie->code) {
 		case ABS_X:
-			abs_x = ie->value;
+			ev.dx += ie->value - ev.st.x;
+			ev.st.x = ie->value;
 			break;
 		case ABS_Y:
-			abs_y = ie->value;
+			ev.dy += ie->value - ev.st.y;
+			ev.st.y = ie->value;
 			break;
 		case ABS_PRESSURE:
-			abs_p = ie->value;
+			ev.st.p = ie->value;
 			break;
 		case ABS_TOOL_WIDTH:
-			abs_w = ie->value;
+			ev.st.w = ie->value;
 			break;
 		}
 		break;
 	case EV_KEY:
 		switch (ie->code) {
 		case BTN_TOUCH:
-			touch = ie->value != 0;
+			ev.st.id = ie->value != 0 ? 1 : 0;
 			break;
 		case BTN_TOOL_FINGER:
-			nfingers = ie->value != 0 ? 1 : nfingers;
+			ev.nfingers = ie->value != 0 ? 1 : ev.nfingers;
 			break;
 		case BTN_TOOL_DOUBLETAP:
-			nfingers = ie->value != 0 ? 2 : nfingers;
+			ev.nfingers = ie->value != 0 ? 2 : ev.nfingers;
 			break;
 		case BTN_TOOL_TRIPLETAP:
-			nfingers = ie->value != 0 ? 3 : nfingers;
+			ev.nfingers = ie->value != 0 ? 3 : ev.nfingers;
 			break;
 		case BTN_TOOL_QUADTAP:
-			nfingers = ie->value != 0 ? 4 : nfingers;
+			ev.nfingers = ie->value != 0 ? 4 : ev.nfingers;
 			break;
 		case BTN_TOOL_QUINTTAP:
-			nfingers = ie->value != 0 ? 5 : nfingers;
+			ev.nfingers = ie->value != 0 ? 5 : ev.nfingers;
 			break;
 		case BTN_LEFT ... BTN_LEFT + 7:
-			button &= ~(1 << (ie->code - BTN_LEFT));
-			button |= ((!!ie->value) << (ie->code - BTN_LEFT));
+			ev.buttons &= ~(1 << (ie->code - BTN_LEFT));
+			ev.buttons |= ((!!ie->value) << (ie->code - BTN_LEFT));
 			break;
 		}
 		break;
@@ -1383,70 +1406,67 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	 * assembly full package
 	 */
 
-	if (!synhw.cap_pressure && touch)
-	 	abs_p = MAX(syninfo.min_pressure, syninfo.tap_threshold);
-	if (synhw.cap_touch & !touch)
-		abs_p = 0;
+	if (!synhw.cap_pressure && ev.st.id != 0)
+		ev.st.p = MAX(syninfo.min_pressure, syninfo.tap_threshold);
+	if (synhw.cap_touch && ev.st.id == 0)
+		ev.st.p = 0;
 
 	act->obutton = act->button;
-	act->button = butmapev[button & MOUSE_SYS_STDBUTTONS];
-	act->button |= (button & MOUSE_SYS_EXTBUTTONS);
+	act->button = butmapev[ev.buttons & MOUSE_SYS_STDBUTTONS];
+	act->button |= (ev.buttons & MOUSE_SYS_EXTBUTTONS);
 
 	if (rodent.rtype == MOUSE_PROTO_TOUCHPAD) {
-		debug("absolute data %d,%d,%d,%d", abs_x, abs_y, abs_p, abs_w);
-		rel_x = abs_x - oabs_x;
-		rel_y = abs_y - oabs_y;
-		oabs_x = abs_x;
-		oabs_y = abs_y;
-		switch (r_gestures(abs_x, abs_y, abs_p, abs_w, nfingers,
-		    &ie->time, act)) {
+		debug("absolute data %d,%d,%d,%d", ev.st.x, ev.st.y, ev.st.p,
+		    ev.st.w);
+		switch (r_gestures(ev.st.x, ev.st.y, ev.st.p, ev.st.w,
+		    ev.nfingers, &ie->time, act)) {
 		case GEST_IGNORE:
-			rel_x = -acc_x;
-			rel_y = -acc_y;
-			rel_z = 0;
-			acc_x = acc_y = 0;
+			ev.dx = -ev.acc_dx;
+			ev.dy = -ev.acc_dy;
+			ev.dz = 0;
+			ev.acc_dx = ev.acc_dy = 0;
 			break;
 		case GEST_ACCUMULATE:	/* Revertable pointer movement. */
-			acc_x += rel_x;
-			acc_y += rel_y;
+			ev.acc_dx += ev.dx;
+			ev.acc_dy += ev.dy;
 			break;
 		case GEST_MOVE:		/* Pointer movement. */
-			acc_x = acc_y = 0;
+			ev.acc_dx = ev.acc_dy = 0;
 			break;
 		case GEST_VSCROLL:	/* Vertical scrolling. */
 			if (syninfo.natural_scroll)
-				rel_z = -rel_y;
+				ev.dz = -ev.dy;
 			else
-				rel_z = rel_y;
-			rel_x = -acc_x;
-			rel_y = -acc_y;
-			acc_x = acc_y = 0;
+				ev.dz = ev.dy;
+			ev.dx = -ev.acc_dx;
+			ev.dy = -ev.acc_dy;
+			ev.acc_dx = ev.acc_dy = 0;
 			break;
 		case GEST_HSCROLL:	/* Horizontal scrolling. */
 /*
-			if (rel_x != 0) {
+			if (ev.dx != 0) {
 				if (syninfo.natural_scroll)
-					act->button |= (rel_x > 0)
+					act->button |= (ev.dx > 0)
 					    ? MOUSE_BUTTON6DOWN
 					    : MOUSE_BUTTON7DOWN;
 				else
-					act->button |= (rel_x > 0)
+					act->button |= (ev.dx > 0)
 					    ? MOUSE_BUTTON7DOWN
 					    : MOUSE_BUTTON6DOWN;
 			}
 */
-			rel_x = -acc_x;
-			rel_y = -acc_y;
-			acc_x = acc_y = 0;
+			ev.dx = -ev.acc_dx;
+			ev.dy = -ev.acc_dy;
+			ev.acc_dx = ev.acc_dy = 0;
 			break;
 		}
 	}
 
-	debug("assembled full packet %d,%d,%d", rel_x, rel_y, rel_z);
-	act->dx = rel_x;
-	act->dy = rel_y;
-	act->dz = rel_z;
-	rel_x = rel_y = rel_z = 0;
+	debug("assembled full packet %d,%d,%d", ev.dx, ev.dy, ev.dz);
+	act->dx = ev.dx;
+	act->dy = ev.dy;
+	act->dz = ev.dz;
+	ev.dx = ev.dy = ev.dz = ev.dw = 0;
 
 	/*
 	 * We don't reset pBufP here yet, as there may be an additional data
