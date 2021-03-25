@@ -1336,6 +1336,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	    MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN,
 	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN
 	};
+	int i, active;
 
 	if (debug > 1)
 		debug("received event 0x%02x, 0x%04x, %d",
@@ -1383,9 +1384,10 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 		case ABS_MT_TRACKING_ID:
 			if (synhw.is_mt &&
 			    ev.slot >= 0 && ev.slot < MAX_FINGERS) {
-				if (ie->value != -1 &&
+				if (ie->value != -1 && ev.mt[ev.slot].id > 0 &&
 				    ie->value + 1 != ev.mt[ev.slot].id) {
-					debug("tracking id changed");
+					debug("tracking id changed %d->%d",
+					    ie->value, ev.mt[ev.slot].id - 1);
 					ev.mt[ev.slot].id = 0;
 				} else
 					ev.mt[ev.slot].id = ie->value + 1;
@@ -1451,6 +1453,22 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	act->obutton = act->button;
 	act->button = butmapev[ev.buttons & MOUSE_SYS_STDBUTTONS];
 	act->button |= (ev.buttons & MOUSE_SYS_EXTBUTTONS);
+
+	/* Convert cumulative to average movement in MT case */
+	if (synhw.is_mt) {
+		active = 0;
+		for (i = 0; i < MAX_FINGERS; i++)
+			if (ev.mt[i].id != 0)
+				active++;
+		/* Do not count finger holding a click as active */
+		if (synhw.is_clickpad && ev.buttons != 0)
+			active--;
+		if (active > 1) {
+			/* XXX: We should dynamically update rodent.accel */
+			ev.dx /= active;
+			ev.dy /= active;
+		}
+	}
 
 	if (rodent.rtype == MOUSE_PROTO_TOUCHPAD) {
 		if (debug > 1)
