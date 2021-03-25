@@ -1271,6 +1271,11 @@ r_identify(void)
 			synhw.cap_pressure = true;
 		if (bit_test(abs_bits, ABS_TOOL_WIDTH))
 			synhw.cap_width = true;
+		if (bit_test(abs_bits, ABS_MT_SLOT) &&
+		    bit_test(abs_bits, ABS_MT_TRACKING_ID) &&
+		    bit_test(abs_bits, ABS_MT_POSITION_X) &&
+		    bit_test(abs_bits, ABS_MT_POSITION_Y))
+			synhw.is_mt = true;
 		if (ioctl(rodent.mfd,
 		    EVIOCGPROP(sizeof(prop_bits)), prop_bits) < 0)
 			return (MOUSE_PROTO_UNKNOWN);
@@ -1355,11 +1360,13 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	case EV_ABS:
 		switch (ie->code) {
 		case ABS_X:
-			ev.dx += ie->value - ev.st.x;
+			if (!synhw.is_mt)
+				ev.dx += ie->value - ev.st.x;
 			ev.st.x = ie->value;
 			break;
 		case ABS_Y:
-			ev.dy += ie->value - ev.st.y;
+			if (!synhw.is_mt)
+				ev.dy += ie->value - ev.st.y;
 			ev.st.y = ie->value;
 			break;
 		case ABS_PRESSURE:
@@ -1367,6 +1374,35 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 			break;
 		case ABS_TOOL_WIDTH:
 			ev.st.w = ie->value;
+			break;
+		case ABS_MT_SLOT:
+			if (synhw.is_mt)
+				ev.slot = ie->value;
+			break;
+		case ABS_MT_TRACKING_ID:
+			if (synhw.is_mt &&
+			    ev.slot >= 0 && ev.slot < MAX_FINGERS) {
+				if (ie->value != -1 &&
+				    ie->value + 1 != ev.mt[ev.slot].id) {
+					debug("tracking id changed");
+					ev.mt[ev.slot].id = 0;
+				} else
+					ev.mt[ev.slot].id = ie->value + 1;
+			}
+			break;
+		case ABS_MT_POSITION_X:
+			if (synhw.is_mt &&
+			    ev.slot >= 0 && ev.slot < MAX_FINGERS) {
+				ev.dx += ie->value - ev.mt[ev.slot].x;
+				ev.mt[ev.slot].x = ie->value;
+			}
+			break;
+		case ABS_MT_POSITION_Y:
+			if (synhw.is_mt &&
+			    ev.slot >= 0 && ev.slot < MAX_FINGERS) {
+				ev.dy += ie->value - ev.mt[ev.slot].y;
+				ev.mt[ev.slot].y = ie->value;
+			}
 			break;
 		}
 		break;
