@@ -293,7 +293,10 @@ static struct gesture_state {
 	int		zmax;           /* maximum pressure value */
 	struct timeval	taptimeout;     /* tap timeout for touchpads */
 	struct timeval	startdelay;
-} gesture;
+	int		idletimeout;
+} gesture = {
+	.idletimeout = -1,
+};
 
 static struct rodentparam {
     int flags;
@@ -316,7 +319,6 @@ static struct rodentparam {
     float remainz;		/*    ... for rounding errors. */
     int scrollthreshold;	/* Movement distance before virtual scrolling */
     int scrollspeed;		/* Movement distance to rate of scrolling */
-    int idletimeout;		/* */
 } rodent = {
     .flags = 0,
     .portname = NULL,
@@ -337,7 +339,6 @@ static struct rodentparam {
     .remainz = 0.0,
     .scrollthreshold = DFLT_SCROLLTHRESHOLD,
     .scrollspeed = DFLT_SCROLLSPEED,
-    .idletimeout = -1,
 };
 
 /* button status */
@@ -452,7 +453,7 @@ static bool	r_timeout(void);
 static void	r_click(mousestatus_t *act);
 static bool	r_drift(struct drift *, mousestatus_t *);
 static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
-		    struct timeval *time, mousestatus_t *ms, int *idletimout);
+		    struct timeval *time, mousestatus_t *ms);
 
 int
 main(int argc, char *argv[])
@@ -862,12 +863,12 @@ moused(void)
 	    timeout = 20;
 	    timeout_em3b = true;
 	}
-	if (rodent.idletimeout != -1) {
-	    if (timeout == -1 || rodent.idletimeout < timeout) {
-		timeout = rodent.idletimeout;
+	if (gesture.idletimeout != -1) {
+	    if (timeout == -1 || gesture.idletimeout < timeout) {
+		timeout = gesture.idletimeout;
 		timeout_em3b = false;
 	    } else
-		rodent.idletimeout -= timeout;
+		gesture.idletimeout -= timeout;
 	}
 
 	c = poll(&fds, 1, timeout);
@@ -905,7 +906,7 @@ moused(void)
 		b.code = SYN_REPORT;
 		b.value = 1;
 	    }
-	    rodent.idletimeout = -1;
+	    gesture.idletimeout = -1;
 	    if ((flags = r_protocol(&b, &action0)) == 0)
 		continue;
 
@@ -1398,7 +1399,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 		oabs_x = abs_x;
 		oabs_y = abs_y;
 		switch (r_gestures(abs_x, abs_y, abs_p, abs_w, nfingers,
-		    &ie->time, act, &rodent.idletimeout)) {
+		    &ie->time, act)) {
 		case GEST_IGNORE:
 			rel_x = -acc_x;
 			rel_y = -acc_y;
@@ -1793,7 +1794,7 @@ r_click(mousestatus_t *act)
 
 static enum gesture
 r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
-    mousestatus_t *ms, int *idletimeout)
+    mousestatus_t *ms)
 {
 	struct gesture_state *gest = &gesture;
 	int dx, dy;
@@ -2099,7 +2100,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 				gest->fingerdown = true;
 
 				/* Schedule button press on next event */
-				*idletimeout = 0;
+				gest->idletimeout = 0;
 			} else {
 				/*
 				 * This is the first tap: we set the
@@ -2107,7 +2108,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 				 * down event.
 				 */
 				gest->in_taphold = true;
-				*idletimeout = syninfo.taphold_timeout;
+				gest->idletimeout = syninfo.taphold_timeout;
 				tvadd(&gest->taptimeout, time);
 
 				switch (gest->fingers_nb) {
