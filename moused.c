@@ -287,6 +287,7 @@ static struct gesture_state {
 	int 		start_y;
 	int 		prev_x;
 	int 		prev_y;
+	int		prev_nfingers;
 	int		fingers_nb;
 	int		tap_button;
 	bool		fingerdown;
@@ -1452,8 +1453,9 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	act->button |= (ev.buttons & MOUSE_SYS_EXTBUTTONS);
 
 	if (rodent.rtype == MOUSE_PROTO_TOUCHPAD) {
-		debug("absolute data %d,%d,%d,%d", ev.st.x, ev.st.y, ev.st.p,
-		    ev.st.w);
+		if (debug > 1)
+			debug("absolute data %d,%d,%d,%d", ev.st.x, ev.st.y,
+			    ev.st.p, ev.st.w);
 		switch (r_gestures(ev.st.x, ev.st.y, ev.st.p, ev.st.w,
 		    ev.nfingers, &ie->time, act)) {
 		case GEST_IGNORE:
@@ -1461,13 +1463,16 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 			ev.dy = -ev.acc_dy;
 			ev.dz = 0;
 			ev.acc_dx = ev.acc_dy = 0;
+			debug("gesture IGNORE");
 			break;
 		case GEST_ACCUMULATE:	/* Revertable pointer movement. */
 			ev.acc_dx += ev.dx;
 			ev.acc_dy += ev.dy;
+			debug("gesture ACCUMULATE %d,%d", ev.dx, ev.dy);
 			break;
 		case GEST_MOVE:		/* Pointer movement. */
 			ev.acc_dx = ev.acc_dy = 0;
+			debug("gesture MOVE %d,%d", ev.dx, ev.dy);
 			break;
 		case GEST_VSCROLL:	/* Vertical scrolling. */
 			if (syninfo.natural_scroll)
@@ -1477,6 +1482,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 			ev.dx = -ev.acc_dx;
 			ev.dy = -ev.acc_dy;
 			ev.acc_dx = ev.acc_dy = 0;
+			debug("gesture VSCROLL %d", ev.dz);
 			break;
 		case GEST_HSCROLL:	/* Horizontal scrolling. */
 /*
@@ -1494,6 +1500,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 			ev.dx = -ev.acc_dx;
 			ev.dy = -ev.acc_dy;
 			ev.acc_dx = ev.acc_dy = 0;
+			debug("gesture HSCROLL %d", ev.dw);
 			break;
 		}
 	}
@@ -1868,6 +1875,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		int vscroll_hor_area, vscroll_ver_area;
 		int max_x, max_y, min_x, min_y;
 		int tap_timeout;
+		int prev_nfingers;
 
 		/* XXX Verify values? */
 		two_finger_scroll = syninfo.two_finger_scroll;
@@ -1959,8 +1967,11 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 			gest->start_y = y0;
 		}
 
+		prev_nfingers = gest->prev_nfingers;
+
 		gest->prev_x = x0;
 		gest->prev_y = y0;
+		gest->prev_nfingers = nfingers;
 
 		start_x = gest->start_x;
 		start_y = gest->start_y;
@@ -2079,6 +2090,10 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 			gest->in_vscroll != 0 ? "YES" : "NO",
 			gest->in_vscroll, dx, dy, gest->fingers_nb);
 
+		/* Workaround cursor jump on finger set changes */
+		if (prev_nfingers != nfingers)
+			return (GEST_IGNORE);
+
 		switch (gest->in_vscroll) {
 		case 1:
 			return (GEST_VSCROLL);
@@ -2100,6 +2115,8 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 	 */
 	if (synhw.is_clickpad && syninfo.softbuttons_y != 0)
 		ms->button &= ~MOUSE_BUTTON1DOWN;
+
+	gest->prev_nfingers = 0;
 
 	if (gest->fingerdown) {
 		/*
