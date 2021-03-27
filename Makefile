@@ -1,11 +1,15 @@
 # $FreeBSD$
 
-PROG=	moused
-MAN=	moused.8
+MK_DEBUG_FILES=	no
 
-LIBADD=	m util
+LOCALBASE?=	/usr/local
+PREFIX?=	${LOCALBASE}
+BINDIR?=	${PREFIX}/sbin
+MANDIR?=	${PREFIX}/man/man
 
-#BINMODE=4555
-#PRECIOUSPROG=
+PROG=		moused
+MAN=		moused.8
+
+LDADD=		-lm -lutil
 
 .include <bsd.prog.mk>
