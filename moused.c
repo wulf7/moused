@@ -1248,6 +1248,10 @@ r_identify(void)
 		return (MOUSE_PROTO_UNKNOWN);
 	}
 
+	/* Do not loop events */
+	if (strncmp(rodent.model, "System mouse", sizeof(rodent.model)) == 0)
+		return (MOUSE_PROTO_UNKNOWN);
+
 	rodent.rtype = r_identify_evdev(key_bits, rel_bits, abs_bits);
 
 	switch (rodent.rtype) {
