@@ -1170,7 +1170,7 @@ bit_find(bitstr_t *array, int start, int stop)
 {
 	int res;
 
-	bit_ffs_at(array, start, stop - start, &res);
+	bit_ffs_at(array, start, stop + 1, &res);
 	return (res != -1);
 }
 
@@ -1178,12 +1178,12 @@ bit_find(bitstr_t *array, int start, int stop)
 static int
 r_identify_evdev(bitstr_t *key_bits, bitstr_t *rel_bits, bitstr_t *abs_bits)
 {
-	bool has_keys = bit_find(key_bits, 0, BTN_MISC);
-	bool has_buttons = bit_find(key_bits, BTN_MISC, BTN_JOYSTICK);
-	bool has_lmr = bit_find(key_bits, BTN_LEFT, BTN_MIDDLE + 1);
-	bool has_rel_axes = bit_find(rel_bits, 0, REL_CNT);
-	bool has_abs_axes = bit_find(abs_bits, 0, ABS_CNT);
-	bool has_mt = bit_find(abs_bits, ABS_MT_SLOT, ABS_CNT);
+	bool has_keys = bit_find(key_bits, 0, BTN_MISC - 1);
+	bool has_buttons = bit_find(key_bits, BTN_MISC, BTN_JOYSTICK - 1);
+	bool has_lmr = bit_find(key_bits, BTN_LEFT, BTN_MIDDLE);
+	bool has_rel_axes = bit_find(rel_bits, 0, REL_MAX);
+	bool has_abs_axes = bit_find(abs_bits, 0, ABS_MAX);
+	bool has_mt = bit_find(abs_bits, ABS_MT_SLOT, ABS_MAX);
 
 	if (has_abs_axes) {
 		if (has_mt && !has_buttons) {
@@ -1220,7 +1220,7 @@ r_identify_evdev(bitstr_t *key_bits, bitstr_t *rel_bits, bitstr_t *abs_bits)
 
 	if (has_keys)
 		return (MOUSE_PROTO_KEYBOARD);
-	else if (has_rel_axes || has_abs_axes || has_buttons)
+	else if (has_rel_axes || has_buttons)
 		return (MOUSE_PROTO_MOUSE);
 
 	return (MOUSE_PROTO_UNKNOWN);
