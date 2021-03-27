@@ -708,13 +708,13 @@ main(int argc, char *argv[])
 	    if (rodent.mfd == -1)
 		logerr(1, "unable to open %s", rodent.portname);
 	    if (r_identify() == MOUSE_PROTO_UNKNOWN) {
-		logwarnx("cannot determine mouse type on %s", rodent.portname);
+		debug("cannot determine mouse type on %s", rodent.portname);
 		close(rodent.mfd);
 		rodent.mfd = -1;
 	    }
 		if (rodent.mfd != -1 && grab &&
 		    ioctl(rodent.mfd, EVIOCGRAB, 1) == -1) {
-			logerr(1, "unable to grab %s", rodent.portname);
+			logwarnx("unable to grab %s", rodent.portname);
 			close(rodent.mfd);
 			rodent.mfd = -1;
 		}
