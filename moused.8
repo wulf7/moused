@@ -38,7 +38,7 @@
 .Nd pass mouse data to the console driver
 .Sh SYNOPSIS
 .Nm
-.Op Fl DPRacdf
+.Op Fl PRacdf
 .Op Fl I Ar file
 .Op Fl F Ar rate
 .Op Fl VH Op Fl U Ar distance Fl L Ar distance
@@ -115,15 +115,6 @@ The user program which is reading mouse data
 via
 .Xr sysmouse 4
 will not be affected.
-.It Fl D
-Lower DTR on the serial port.
-This option is valid only if
-.Ar mousesystems
-is selected as the protocol type.
-The DTR line may need to be dropped for a 3-button mouse
-to operate in the
-.Ar mousesystems
-mode.
 .It Fl E Ar timeout
 When the third button emulation is enabled
 (see above),
