@@ -50,10 +50,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/bitstring.h>
 #include <sys/consio.h>
 #include <sys/mouse.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
 #include <sys/time.h>
-#include <sys/un.h>
 
 #include <dev/evdev/input.h>
 
@@ -62,7 +59,7 @@ __FBSDID("$FreeBSD$");
 #include <errno.h>
 #include <fcntl.h>
 #include <libutil.h>
-#include <limits.h>
+#include <math.h>
 #include <poll.h>
 #include <setjmp.h>
 #include <signal.h>
@@ -73,9 +70,7 @@ __FBSDID("$FreeBSD$");
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
-#include <termios.h>
 #include <unistd.h>
-#include <math.h>
 
 /*
  * bitstr_t implementation must be identical to one found in EVIOCG*
