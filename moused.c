@@ -270,8 +270,8 @@ static struct tpinfo {
 	.min_pressure = 1,
 	.max_pressure = 255,
 	.max_width = 16,
-	.tap_timeout = 150,		/* ms */
-	.tap_threshold = 50,		/* ms */
+	.tap_timeout = 100,		/* ms */
+	.tap_threshold = 20,
 	.tap_max_delta = 2.0,		/* mm */
 	.taphold_timeout = 200,		/* ms */
 	.vscroll_min_delta = 1.25,	/* mm */
