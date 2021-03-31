@@ -200,9 +200,11 @@ static struct pidfh *pfh;
 #define SCROLL_PREPARE		1
 #define SCROLL_SCROLLING	2
 
-static int	scroll_state;
-static int	scroll_movement;
-static int	hscroll_movement;
+static struct scroll {
+	int	state;
+	int	movement;
+	int	hmovement;
+} scroll;
 
 /* local variables */
 
@@ -941,9 +943,9 @@ moused(void)
 	    if ((rodent.flags & VirtualScroll) || (rodent.flags & HVirtualScroll)) {
 		/* Allow middle button drags to scroll up and down */
 		if (action0.button == MOUSE_BUTTON2DOWN) {
-		    if (scroll_state == SCROLL_NOTSCROLLING) {
-			scroll_state = SCROLL_PREPARE;
-			scroll_movement = hscroll_movement = 0;
+		    if (scroll.state == SCROLL_NOTSCROLLING) {
+			scroll.state = SCROLL_PREPARE;
+			scroll.movement = scroll.hmovement = 0;
 			debug("PREPARING TO SCROLL");
 		    }
 		    debug("[BUTTON2] flags:%08x buttons:%08x obuttons:%08x",
@@ -953,14 +955,14 @@ moused(void)
 			  action.flags, action.button, action.obutton);
 
 		    /* This isn't a middle button down... move along... */
-		    if (scroll_state == SCROLL_SCROLLING) {
+		    if (scroll.state == SCROLL_SCROLLING) {
 			/*
 			 * We were scrolling, someone let go of button 2.
 			 * Now turn autoscroll off.
 			 */
-			scroll_state = SCROLL_NOTSCROLLING;
-			debug("DONE WITH SCROLLING / %d", scroll_state);
-		    } else if (scroll_state == SCROLL_PREPARE) {
+			scroll.state = SCROLL_NOTSCROLLING;
+			debug("DONE WITH SCROLLING / %d", scroll.state);
+		    } else if (scroll.state == SCROLL_PREPARE) {
 			mousestatus_t newaction = action0;
 
 			/* We were preparing to scroll, but we never moved... */
@@ -1004,53 +1006,54 @@ moused(void)
 		 * If *only* the middle button is pressed AND we are moving
 		 * the stick/trackpoint/nipple, scroll!
 		 */
-		if (scroll_state == SCROLL_PREPARE) {
+		if (scroll.state == SCROLL_PREPARE) {
 			/* Middle button down, waiting for movement threshold */
 			if (action2.dy || action2.dx) {
 				if (rodent.flags & VirtualScroll) {
-					scroll_movement += action2.dy;
-					if (scroll_movement < -rodent.scrollthreshold) {
-						scroll_state = SCROLL_SCROLLING;
-					} else if (scroll_movement > rodent.scrollthreshold) {
-						scroll_state = SCROLL_SCROLLING;
+					scroll.movement += action2.dy;
+					if (scroll.movement < -rodent.scrollthreshold) {
+						scroll.state = SCROLL_SCROLLING;
+					} else if (scroll.movement > rodent.scrollthreshold) {
+						scroll.state = SCROLL_SCROLLING;
 					}
 				}
 				if (rodent.flags & HVirtualScroll) {
-					hscroll_movement += action2.dx;
-					if (hscroll_movement < -rodent.scrollthreshold) {
-						scroll_state = SCROLL_SCROLLING;
-					} else if (hscroll_movement > rodent.scrollthreshold) {
-						scroll_state = SCROLL_SCROLLING;
+					scroll.hmovement += action2.dx;
+					if (scroll.hmovement < -rodent.scrollthreshold) {
+						scroll.state = SCROLL_SCROLLING;
+					} else if (scroll.hmovement > rodent.scrollthreshold) {
+						scroll.state = SCROLL_SCROLLING;
 					}
 				}
-				if (scroll_state == SCROLL_SCROLLING) scroll_movement = hscroll_movement = 0;
+				if (scroll.state == SCROLL_SCROLLING)
+					scroll.movement = scroll.hmovement = 0;
 			}
-		} else if (scroll_state == SCROLL_SCROLLING) {
+		} else if (scroll.state == SCROLL_SCROLLING) {
 			 if (rodent.flags & VirtualScroll) {
-				 scroll_movement += action2.dy;
-				 debug("SCROLL: %d", scroll_movement);
-			    if (scroll_movement < -rodent.scrollspeed) {
+				 scroll.movement += action2.dy;
+				 debug("SCROLL: %d", scroll.movement);
+			    if (scroll.movement < -rodent.scrollspeed) {
 				/* Scroll down */
 				action2.dz = -1;
-				scroll_movement = 0;
+				scroll.movement = 0;
 			    }
-			    else if (scroll_movement > rodent.scrollspeed) {
+			    else if (scroll.movement > rodent.scrollspeed) {
 				/* Scroll up */
 				action2.dz = 1;
-				scroll_movement = 0;
+				scroll.movement = 0;
 			    }
 			 }
 			 if (rodent.flags & HVirtualScroll) {
-				 hscroll_movement += action2.dx;
-				 debug("HORIZONTAL SCROLL: %d", hscroll_movement);
+				 scroll.hmovement += action2.dx;
+				 debug("HORIZONTAL SCROLL: %d", scroll.hmovement);
 
-				 if (hscroll_movement < -rodent.scrollspeed) {
+				 if (scroll.hmovement < -rodent.scrollspeed) {
 					 action2.dz = -2;
-					 hscroll_movement = 0;
+					 scroll.hmovement = 0;
 				 }
-				 else if (hscroll_movement > rodent.scrollspeed) {
+				 else if (scroll.hmovement > rodent.scrollspeed) {
 					 action2.dz = 2;
-					 hscroll_movement = 0;
+					 scroll.movement = 0;
 				 }
 			 }
 
@@ -1070,7 +1073,7 @@ moused(void)
 		}
 
 		/* Defer clicks until we aren't VirtualScroll'ing. */
-		if (scroll_state == SCROLL_NOTSCROLLING)
+		if (scroll.state == SCROLL_NOTSCROLLING)
 			r_click(&action2);
 
 		if (action2.flags & MOUSE_POSCHANGED) {
