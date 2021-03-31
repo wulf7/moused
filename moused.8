@@ -38,7 +38,7 @@
 .Nd pass mouse data to the console driver
 .Sh SYNOPSIS
 .Nm
-.Op Fl PRacdf
+.Op Fl acdf
 .Op Fl I Ar file
 .Op Fl VH Op Fl U Ar distance Fl L Ar distance
 .Op Fl A Ar exp Ns Op , Ns Ar offset
@@ -53,7 +53,7 @@
 .Fl p Ar port
 .Pp
 .Nm
-.Op Fl Pd
+.Op Fl d
 .Fl p Ar port
 .Fl i Ar info
 .Sh DESCRIPTION
@@ -157,28 +157,6 @@ Write the process id of the
 utility in the specified file.
 Without this option, the process id will be stored in
 .Pa /var/run/moused.pid .
-.It Fl P
-Do not start the Plug and Play COM device enumeration procedure
-when identifying the serial mouse.
-If this option is given together with the
-.Fl i
-option, the
-.Nm
-utility will not be able to print useful information for the serial mouse.
-.It Fl R
-Lower RTS on the serial port.
-This option is valid only if
-.Ar mousesystems
-is selected as the protocol type by the
-.Fl t
-option below.
-It is often used with the
-.Fl D
-option above.
-Both RTS and DTR lines may need to be dropped for
-a 3-button mouse to operate in the
-.Ar mousesystems
-mode.
 .It Fl T Ar distance Ns Op , Ns Ar time Ns Op , Ns Ar after
 Terminate drift.
 Use this option if mouse pointer slowly wanders when mouse is not moved.
