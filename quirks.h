@@ -185,7 +185,7 @@ quirks_context_ref(struct quirks_context *ctx);
  */
 struct quirks *
 quirks_fetch_for_device(struct quirks_context *ctx,
-			struct udev_device *device);
+			struct device *device);
 
 /**
  * Reduce the refcount by one. When the refcount reaches zero, the

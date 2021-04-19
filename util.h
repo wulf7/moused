@@ -33,11 +33,8 @@
 #define	bit(x_) (1UL << (x_))
 
 #define	ARRAY_LENGTH(a) (sizeof (a) / sizeof (a)[0])
-#define	ARRAY_FOR_EACH(_arr, _elem) \
-	for (size_t _i = 0; _i < ARRAY_LENGTH(_arr) && (_elem = &_arr[_i]); _i++)
 
 struct libinput;
-struct udev_device;
 
 /* Recognized device types */
 enum device_type {
@@ -52,6 +49,7 @@ enum device_type {
 };
 
 struct device {
+	char *path;
 	enum device_type type;
 	char name[80];
 	struct input_id id;
@@ -86,23 +84,6 @@ typedef void (*libinput_log_handler)(struct libinput *libinput,
 				     enum libinput_log_priority priority,
 				     const char *format, va_list args)
 	   LIBINPUT_ATTRIBUTE_PRINTF(3, 0);
-
-static inline struct udev_device *
-udev_device_get_parent(struct udev_device *udev_device)
-{
-	return (NULL);
-}
-static inline char const *
-udev_device_get_devnode(struct udev_device *udev_device)
-{
-	return ("");
-}
-static inline char const *
-udev_device_get_property_value(struct udev_device *udev_device,
-    char const *property)
-{
-	return (NULL);
-}
 
 bool	streq(const char *str1, const char *str2);
 bool	strneq(const char *str1, const char *str2, int n);

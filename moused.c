@@ -307,7 +307,6 @@ static struct evdev_state {
 
 static struct rodentparam {
     int flags;
-    const char *portname;	/* /dev/XXX */
     struct device dev;		/* Device */
     int zmap[4];		/* MOUSE_{X|Y}AXIS or a button number */
     int wmode;			/* wheel mode button number */
@@ -327,7 +326,7 @@ static struct rodentparam {
     int scrollspeed;		/* Movement distance to rate of scrolling */
 } rodent = {
     .flags = 0,
-    .portname = NULL,
+    .dev.path = NULL,
     .dev.type = MOUSE_PROTO_UNKNOWN,
     .zmap = { 0, 0, 0, 0 },
     .wmode = 0,
@@ -553,7 +552,7 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'p':
-	    rodent.portname = optarg;
+	    rodent.dev.path = optarg;
 	    break;
 
 	case 'w':
@@ -670,7 +669,7 @@ main(int argc, char *argv[])
 	}
     }
 
-	if (rodent.portname == NULL) {
+	if (rodent.dev.path == NULL) {
 		warnx("no port name specified");
 		usage();
 	}
@@ -682,17 +681,17 @@ main(int argc, char *argv[])
 	    signal(SIGTERM, cleanup);
 	    signal(SIGUSR1, pause_mouse);
 
-	    rodent.mfd = open(rodent.portname, O_RDWR | O_NONBLOCK);
+	    rodent.mfd = open(rodent.dev.path, O_RDWR | O_NONBLOCK);
 	    if (rodent.mfd == -1)
-		logerr(1, "unable to open %s", rodent.portname);
+		logerr(1, "unable to open %s", rodent.dev.path);
 	    if (r_identify() == MOUSE_PROTO_UNKNOWN) {
-		debug("cannot determine mouse type on %s", rodent.portname);
+		debug("cannot determine mouse type on %s", rodent.dev.path);
 		close(rodent.mfd);
 		rodent.mfd = -1;
 	    }
 		if (rodent.mfd != -1 && grab &&
 		    ioctl(rodent.mfd, EVIOCGRAB, 1) == -1) {
-			logwarnx("unable to grab %s", rodent.portname);
+			logwarnx("unable to grab %s", rodent.dev.path);
 			close(rodent.mfd);
 			rodent.mfd = -1;
 		}
@@ -700,10 +699,10 @@ main(int argc, char *argv[])
 	    /* print some information */
 	    if (identify != ID_NONE) {
 		if (identify == ID_ALL)
-		    printf("%s %s %s\n", rodent.portname,
+		    printf("%s %s %s\n", rodent.dev.path,
 		        r_name(rodent.dev.type), rodent.dev.name);
 		else if (identify & ID_PORT)
-		    printf("%s\n", rodent.portname);
+		    printf("%s\n", rodent.dev.path);
 		else if (identify & ID_TYPE)
 		    printf("%s\n", r_name(rodent.dev.type));
 		else if (identify & ID_MODEL)
@@ -711,7 +710,7 @@ main(int argc, char *argv[])
 		exit(0);
 	    } else {
 		debug("port: %s  type: %s  model: %s",
-		    rodent.portname, r_name(rodent.dev.type), rodent.dev.name);
+		    rodent.dev.path, r_name(rodent.dev.type), rodent.dev.name);
 	    }
 
 	    if (rodent.mfd == -1) {

@@ -1182,69 +1182,27 @@ quirks_unref(struct quirks *q)
 	return NULL;
 }
 
-/**
- * Searches for the udev property on this device and its parent devices.
- *
- * @return the value of the property or NULL
- */
-static const char *
-udev_prop(struct udev_device *device, const char *prop)
-{
-	struct udev_device *d = device;
-	const char *value = NULL;
-
-	do {
-		value = udev_device_get_property_value(d, prop);
-		d = udev_device_get_parent(d);
-	} while (value == NULL && d != NULL);
-
-	return value;
-}
-
 static inline void
 match_fill_name(struct match *m,
-		struct udev_device *device)
+		struct device *device)
 {
-	const char *str = udev_prop(device, "NAME");
-	size_t slen;
-
-	if (!str)
+	if (device->name[0] == 0)
 		return;
 
-	/* udev NAME is in quotes, strip them */
-	if (str[0] == '"')
-		str++;
-
-	m->name = safe_strdup(str);
-	slen = strlen(m->name);
-	if (slen > 1 &&
-	    m->name[slen - 1] == '"')
-		m->name[slen - 1] = '\0';
+	m->name = safe_strdup(device->name);
 
 	m->bits |= M_NAME;
 }
 
 static inline void
 match_fill_bus_vid_pid(struct match *m,
-		       struct udev_device *device)
+		       struct device *device)
 {
-	const char *str;
-	unsigned int product, vendor, bus, version;
-
-	str = udev_prop(device, "PRODUCT");
-	if (!str)
-		return;
-
-	/* ID_VENDOR_ID/ID_PRODUCT_ID/ID_BUS aren't filled in for virtual
-	 * devices so we have to resort to PRODUCT  */
-	if (sscanf(str, "%x/%x/%x/%x", &bus, &vendor, &product, &version) != 4)
-		return;
-
-	m->product = product;
-	m->vendor = vendor;
-	m->version = version;
+	m->product = device->id.product;
+	m->vendor = device->id.vendor;
+	m->version = device->id.version;
 	m->bits |= M_PID|M_VID|M_VERSION;
-	switch (bus) {
+	switch (device->id.bustype) {
 	case BUS_USB:
 		m->bus = BT_USB;
 		m->bits |= M_BUS;
@@ -1276,26 +1234,32 @@ match_fill_bus_vid_pid(struct match *m,
 
 static inline void
 match_fill_udev_type(struct match *m,
-		     struct udev_device *device)
+		     struct device *device)
 {
-	struct ut_map {
-		const char *prop;
-		enum udev_type flag;
-	} mappings[] = {
-		{ "ID_INPUT_MOUSE", UDEV_MOUSE },
-		{ "ID_INPUT_POINTINGSTICK", UDEV_POINTINGSTICK },
-		{ "ID_INPUT_TOUCHPAD", UDEV_TOUCHPAD },
-		{ "ID_INPUT_TABLET", UDEV_TABLET },
-		{ "ID_INPUT_TABLET_PAD", UDEV_TABLET_PAD },
-		{ "ID_INPUT_JOYSTICK", UDEV_JOYSTICK },
-		{ "ID_INPUT_KEYBOARD", UDEV_KEYBOARD },
-		{ "ID_INPUT_KEY", UDEV_KEYBOARD },
-	};
-	struct ut_map *map;
-
-	ARRAY_FOR_EACH(mappings, map) {
-		if (udev_prop(device, map->prop))
-			m->udev_type |= map->flag;
+	switch (device->type) {
+	case MOUSE_PROTO_MOUSE:
+		m->udev_type |= UDEV_MOUSE;
+		break;
+	caseMOUSE_PROTO_POINTINGSTICK:
+		m->udev_type |= UDEV_MOUSE | UDEV_POINTINGSTICK;
+		break;
+	case MOUSE_PROTO_TOUCHPAD:
+		m->udev_type |= UDEV_TOUCHPAD;
+		break;
+	case MOUSE_PROTO_TABLET:
+		m->udev_type |= UDEV_TABLET;
+		break;
+	case MOUSE_PROTO_TABLET_PAD:
+		m->udev_type |= UDEV_TABLET_PAD;
+		break;
+	case MOUSE_PROTO_KEYBOARD:
+		m->udev_type |= UDEV_KEYBOARD;
+		break;
+	case MOUSE_PROTO_JOYSTICK:
+		m->udev_type |= UDEV_JOYSTICK;
+		break;
+	default:
+		break;
 	}
 	m->bits |= M_UDEV_TYPE;
 }
@@ -1315,7 +1279,7 @@ match_fill_dmi_dt(struct match *m, char *dmi, char *dt)
 }
 
 static struct match *
-match_new(struct udev_device *device,
+match_new(struct device *device,
 	  char *dmi, char *dt)
 {
 	struct match *m = zalloc(sizeof *m);
@@ -1367,7 +1331,7 @@ quirk_match_section(struct quirks_context *ctx,
 		    struct quirks *q,
 		    struct section *s,
 		    struct match *m,
-		    struct udev_device *device)
+		    struct device *device)
 {
 	uint32_t matched_flags = 0x0;
 
@@ -1442,7 +1406,7 @@ quirk_match_section(struct quirks_context *ctx,
 
 struct quirks *
 quirks_fetch_for_device(struct quirks_context *ctx,
-			struct udev_device *udev_device)
+			struct device *device)
 {
 	struct quirks *q = NULL;
 	struct section *s;
@@ -1451,15 +1415,14 @@ quirks_fetch_for_device(struct quirks_context *ctx,
 	if (!ctx)
 		return NULL;
 
-	qlog_debug(ctx, "%s: fetching quirks\n",
-		   udev_device_get_devnode(udev_device));
+	qlog_debug(ctx, "%s: fetching quirks\n", device->path);
 
 	q = quirks_new();
 
-	m = match_new(udev_device, ctx->dmi, ctx->dt);
+	m = match_new(device, ctx->dmi, ctx->dt);
 
 	list_for_each(s, &ctx->sections, link) {
-		quirk_match_section(ctx, q, s, m, udev_device);
+		quirk_match_section(ctx, q, s, m, device);
 	}
 
 	match_free(m);
