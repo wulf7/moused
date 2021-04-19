@@ -49,7 +49,7 @@
 
 
 /* Custom logging so we can have detailed output for the tool but minimal
- * logging for libinput itself. */
+ * logging for moused itself. */
 #define qlog_debug(ctx_, ...) quirk_log_msg((ctx_), QLOG_NOISE, __VA_ARGS__)
 #define qlog_info(ctx_, ...) quirk_log_msg((ctx_),  QLOG_INFO, __VA_ARGS__)
 #define qlog_error(ctx_, ...) quirk_log_msg((ctx_), QLOG_ERROR, __VA_ARGS__)
@@ -187,16 +187,15 @@ struct quirks {
 struct quirks_context {
 	size_t refcount;
 
-	libinput_log_handler log_handler;
+	moused_log_handler *log_handler;
 	enum quirks_log_type log_type;
-	struct libinput *libinput; /* for logging */
 
 	char *dmi;
 	char *dt;
 
 	struct list sections;
 
-	/* list of quirks handed to libinput, just for bookkeeping */
+	/* list of quirks handed to moused, just for bookkeeping */
 	struct list quirks;
 };
 
@@ -208,21 +207,21 @@ quirk_log_msg_va(struct quirks_context *ctx,
 		 va_list args)
 {
 	switch (priority) {
-	/* We don't use this if we're logging through libinput */
+	/* We don't use this if we're logging through syslog */
 	default:
 	case QLOG_NOISE:
 	case QLOG_PARSER_ERROR:
-		if (ctx->log_type == QLOG_LIBINPUT_LOGGING)
+		if (ctx->log_type == QLOG_MOUSED_LOGGING)
 			return;
 		break;
-	case QLOG_DEBUG: /* These map straight to libinput priorities */
+	case QLOG_DEBUG: /* These map straight to syslog priorities */
 	case QLOG_INFO:
 	case QLOG_ERROR:
 		break;
 	}
 
-	ctx->log_handler(ctx->libinput,
-			 (enum libinput_log_priority)priority,
+	ctx->log_handler(priority,
+			 0,
 			 format,
 			 args);
 }
@@ -1076,8 +1075,7 @@ parse_files(struct quirks_context *ctx, const char *data_path)
 struct quirks_context *
 quirks_init_subsystem(const char *data_path,
 		      const char *override_file,
-		      libinput_log_handler log_handler,
-		      struct libinput *libinput,
+		      moused_log_handler log_handler,
 		      enum quirks_log_type log_type)
 {
 	struct quirks_context *ctx = zalloc(sizeof *ctx);
@@ -1087,7 +1085,6 @@ quirks_init_subsystem(const char *data_path,
 	ctx->refcount = 1;
 	ctx->log_handler = log_handler;
 	ctx->log_type = log_type;
-	ctx->libinput = libinput;
 	list_init(&ctx->quirks);
 	list_init(&ctx->sections);
 

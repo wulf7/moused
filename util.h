@@ -34,8 +34,6 @@
 
 #define	ARRAY_LENGTH(a) (sizeof (a) / sizeof (a)[0])
 
-struct libinput;
-
 /* Recognized device types */
 enum device_type {
 	MOUSE_PROTO_MOUSE,
@@ -58,32 +56,14 @@ struct device {
 /**
  * @ingroup base
  *
- * Log priority for internal logging messages.
- */
-enum libinput_log_priority {
-	LIBINPUT_LOG_PRIORITY_DEBUG = 10,
-	LIBINPUT_LOG_PRIORITY_INFO = 20,
-	LIBINPUT_LOG_PRIORITY_ERROR = 30,
-};
-
-/**
- * @ingroup base
- *
  * Log handler type for custom logging.
  *
- * @param libinput The libinput context
  * @param priority The priority of the current message
  * @param format Message format in printf-style
  * @param args Message arguments
- *
- * @see libinput_log_set_priority
- * @see libinput_log_get_priority
- * @see libinput_log_set_handler
  */
-typedef void (*libinput_log_handler)(struct libinput *libinput,
-				     enum libinput_log_priority priority,
-				     const char *format, va_list args)
-	   LIBINPUT_ATTRIBUTE_PRINTF(3, 0);
+typedef void moused_log_handler(int priority, int errnum,
+				const char *format, va_list args);
 
 bool	streq(const char *str1, const char *str2);
 bool	strneq(const char *str1, const char *str2, int n);

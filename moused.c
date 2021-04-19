@@ -436,6 +436,8 @@ static struct drift {
 
 /* function prototypes */
 
+static moused_log_handler	log_or_warn_va;
+
 static void	linacc(int, int, int, int*, int*, int*);
 static void	expoacc(int, int, int, int*, int*, int*);
 static void	moused(void);
@@ -1124,14 +1126,11 @@ usage(void)
  * `errnum' is non-zero, append its string form to the message.
  */
 static void
-log_or_warn(int log_pri, int errnum, const char *fmt, ...)
+log_or_warn_va(int log_pri, int errnum, const char *fmt, va_list ap)
 {
-	va_list ap;
 	char buf[256];
 
-	va_start(ap, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, ap);
-	va_end(ap);
 	if (errnum) {
 		strlcat(buf, ": ", sizeof(buf));
 		strlcat(buf, strerror(errnum), sizeof(buf));
@@ -1141,6 +1140,16 @@ log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 		syslog(log_pri, "%s", buf);
 	else
 		warnx("%s", buf);
+}
+
+static void
+log_or_warn(int log_pri, int errnum, const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	log_or_warn_va(log_pri, errnum, fmt, ap);
+	va_end(ap);
 }
 
 static inline int

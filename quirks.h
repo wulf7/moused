@@ -27,6 +27,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <syslog.h>
 
 /**
  * Handle to the quirks context.
@@ -55,7 +56,7 @@ struct quirk_tuples {
 };
 
 /**
- * Quirks known to libinput
+ * Quirks known to libinput. Moused does not support all of them.
  */
 enum quirk {
 	QUIRK_MODEL_ALPS_SERIAL_TOUCHPAD = 100,
@@ -120,23 +121,23 @@ quirk_get_name(enum quirk q);
  * Log priorities used if custom logging is enabled.
  */
 enum quirks_log_priorities {
-	QLOG_NOISE,
-	QLOG_DEBUG = LIBINPUT_LOG_PRIORITY_DEBUG,
-	QLOG_INFO = LIBINPUT_LOG_PRIORITY_INFO,
-	QLOG_ERROR = LIBINPUT_LOG_PRIORITY_ERROR,
-	QLOG_PARSER_ERROR,
+	QLOG_NOISE = LOG_DEBUG + 1,
+	QLOG_DEBUG = LOG_DEBUG,
+	QLOG_INFO = LOG_INFO,
+	QLOG_ERROR = LOG_ERR,
+	QLOG_PARSER_ERROR = LOG_CRIT,
 };
 
 /**
- * Log type to be used for logging. Use the libinput logging to hook up a
- * libinput log handler. This will cause the quirks to reduce the noise and
+ * Log type to be used for logging. Use the moused logging to hook up a
+ * moused log handler. This will cause the quirks to reduce the noise and
  * only provide useful messages.
  *
  * QLOG_CUSTOM_LOG_PRIORITIES enables more fine-grained and verbose logging,
  * allowing debugging tools to be more useful.
  */
 enum quirks_log_type {
-	QLOG_LIBINPUT_LOGGING,
+	QLOG_MOUSED_LOGGING,
 	QLOG_CUSTOM_LOG_PRIORITIES,
 };
 
@@ -146,20 +147,18 @@ enum quirks_log_type {
  *
  * If log_type is QLOG_CUSTOM_LOG_PRIORITIES, the log handler is called with
  * the custom QLOG_* log priorities. Otherwise, the log handler only uses
- * the libinput log priorities.
+ * the moused (syslog) log priorities.
  *
  * @param data_path The directory containing the various data files
  * @param override_file A file path containing custom overrides
- * @param log_handler The libinput log handler called for debugging output
- * @param libinput The libinput struct passed to the log handler
+ * @param log_handler The moused log handler called for debugging output
  *
  * @return an opaque handle to the context
  */
 struct quirks_context *
 quirks_init_subsystem(const char *data_path,
 		      const char *override_file,
-		      libinput_log_handler log_handler,
-		      struct libinput *libinput,
+		      moused_log_handler log_handler,
 		      enum quirks_log_type log_type);
 
 /**
