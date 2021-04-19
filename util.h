@@ -39,6 +39,18 @@
 struct libinput;
 struct udev_device;
 
+/* Recognized device types */
+enum device_type {
+	MOUSE_PROTO_MOUSE,
+	MOUSE_PROTO_POINTINGSTICK,
+	MOUSE_PROTO_TOUCHPAD,
+	MOUSE_PROTO_TOUCHSCREEN,
+	MOUSE_PROTO_TABLET,
+	MOUSE_PROTO_TABLET_PAD,
+	MOUSE_PROTO_KEYBOARD,
+	MOUSE_PROTO_JOYSTICK,
+};
+
 /**
  * @ingroup base
  *

@@ -72,6 +72,8 @@ __FBSDID("$FreeBSD$");
 #include <syslog.h>
 #include <unistd.h>
 
+#include "util.h"
+
 /*
  * bitstr_t implementation must be identical to one found in EVIOCG*
  * libevdev ioctls. Our bitstring(3) API is compatible since r299090.
@@ -196,22 +198,16 @@ static struct scroll {
 
 /* local variables */
 
-#define MOUSE_PROTO_MOUSE	0
-#define MOUSE_PROTO_TOUCHPAD	1
-#define MOUSE_PROTO_TOUCHSCREEN	2
-#define MOUSE_PROTO_TABLET	3
-#define MOUSE_PROTO_KEYBOARD	4
-#define MOUSE_PROTO_JOYSTICK	5
-
 /* types (the table must be ordered by MOUSE_PROTO_XXX in mouse.h) */
 static const char *rnames[] = {
-    "mouse",
-    "touchpad",
-    "touchscreen",
-    "tablet",
-    "keyboard",
-    "joystick",
-    NULL
+	[MOUSE_PROTO_MOUSE]		= "mouse",
+	[MOUSE_PROTO_POINTINGSTICK]	= "pointing stick",
+	[MOUSE_PROTO_TOUCHPAD]		= "touchpad",
+	[MOUSE_PROTO_TOUCHSCREEN]	= "touchscreen",
+	[MOUSE_PROTO_TABLET]		= "tablet",
+	[MOUSE_PROTO_TABLET_PAD]	= "tablet pad",
+	[MOUSE_PROTO_KEYBOARD]		= "keyboard",
+	[MOUSE_PROTO_JOYSTICK]		= "joystick",
 };
 
 static struct tpcaps {
