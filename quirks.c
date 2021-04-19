@@ -21,28 +21,32 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include "config.h"
-
 /* This has the hallmarks of a library to make it re-usable from the tests
  * and from the list-quirks tool. It doesn't have all of the features from a
  * library you'd expect though
  */
 
+#include <sys/types.h>
+#include <dev/evdev/input.h>
+
 #undef NDEBUG /* You don't get to disable asserts here */
 #include <assert.h>
-#include <stdlib.h>
-#include <libudev.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fnmatch.h>
-#include <libgen.h>
-#ifdef __FreeBSD__
 #include <kenv.h>
-#endif
-
-#include "libinput-versionsort.h"
-#include "libinput-util.h"
+#include <libgen.h>
+#include <limits.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "quirks.h"
+#include "util.h"
+#include "util-list.h"
+
 
 /* Custom logging so we can have detailed output for the tool but minimal
  * logging for libinput itself. */
@@ -358,43 +362,8 @@ property_cleanup(struct property *p)
 /**
  * Return the system DMI info in modalias format.
  */
-#ifdef __linux__
 static inline char *
-init_dmi_linux(void)
-{
-	struct udev *udev;
-	struct udev_device *udev_device;
-	const char *modalias = NULL;
-	char *copy = NULL;
-	const char *syspath = "/sys/devices/virtual/dmi/id";
-
-	udev = udev_new();
-	if (!udev)
-		return NULL;
-
-	udev_device = udev_device_new_from_syspath(udev, syspath);
-	if (udev_device)
-		modalias = udev_device_get_property_value(udev_device,
-							  "MODALIAS");
-
-	/* Not sure whether this could ever really fail, if so we should
-	 * open the sysfs file directly. But then udev wouldn't have failed,
-	 * so... */
-	if (!modalias)
-		modalias = "dmi:*";
-
-	copy = safe_strdup(modalias);
-
-	udev_device_unref(udev_device);
-	udev_unref(udev);
-
-	return copy;
-}
-#endif
-
-#ifdef __FreeBSD__
-static inline char *
-init_dmi_freebsd(void)
+init_dmi(void)
 {
 #define LEN (KENV_MVALLEN + 1)
 	char *modalias;
@@ -440,22 +409,6 @@ init_dmi_freebsd(void)
 		chassis_type_num, chassis_version);
 
 	return modalias;
-}
-#endif
-
-static inline char *
-init_dmi(void)
-{
-	if (getenv("LIBINPUT_RUNNING_TEST_SUITE"))
-		return safe_strdup("dmi:");
-
-#if defined(__linux__)
-	return init_dmi_linux();
-#elif defined(__FreeBSD__)
-	return init_dmi_freebsd();
-#else
-	return NULL;
-#endif
 }
 
 /**

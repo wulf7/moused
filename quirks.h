@@ -23,14 +23,10 @@
 
 #pragma once
 
-#include "config.h"
+#include "util.h"
 
 #include <stdbool.h>
 #include <stdint.h>
-
-#include <libudev.h>
-
-#include "libinput.h"
 
 /**
  * Handle to the quirks context.

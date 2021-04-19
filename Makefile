@@ -9,6 +9,7 @@ MANDIR?=	${PREFIX}/man/man
 CONFSDIR=       ${PREFIX}/etc/devd
 
 PROG=		moused
+SRCS=		moused.c quirks.c quirks.h util.c util.h util-list.c util-list.h
 MAN=		moused.8
 CONFS=		devd.conf
 CONFSNAME=	moused.conf
