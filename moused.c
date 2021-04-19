@@ -173,13 +173,6 @@ enum gesture {
 
 /* structures */
 
-/* symbol table entry */
-typedef struct {
-    const char *name;
-    int val;
-    int val2;
-} symtab_t;
-
 /* global variables */
 
 static int	debug = 0;
@@ -203,19 +196,12 @@ static struct scroll {
 
 /* local variables */
 
-#define MOUSE_IF_EVDEV		6
 #define MOUSE_PROTO_MOUSE	0
 #define MOUSE_PROTO_TOUCHPAD	1
 #define MOUSE_PROTO_TOUCHSCREEN	2
 #define MOUSE_PROTO_TABLET	3
 #define MOUSE_PROTO_KEYBOARD	4
 #define MOUSE_PROTO_JOYSTICK	5
-
-/* interface (the table must be ordered by MOUSE_IF_XXX in mouse.h) */
-static symtab_t rifs[] = {
-    { "evdev",		MOUSE_IF_EVDEV,		0 },
-    { NULL,		MOUSE_IF_UNKNOWN,	0 },
-};
 
 /* types (the table must be ordered by MOUSE_PROTO_XXX in mouse.h) */
 static const char *rnames[] = {
