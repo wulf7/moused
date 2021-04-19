@@ -308,14 +308,13 @@ static struct evdev_state {
 static struct rodentparam {
     int flags;
     const char *portname;	/* /dev/XXX */
-    int rtype;			/* MOUSE_PROTO_XXX */
+    struct device dev;		/* Device */
     int zmap[4];		/* MOUSE_{X|Y}AXIS or a button number */
     int wmode;			/* wheel mode button number */
     int mfd;			/* mouse file descriptor */
     int cfd;			/* /dev/consolectl file descriptor */
     long clickthreshold;	/* double click speed in msec */
     long button2timeout;	/* 3 button emulation timeout */
-    char model[80];		/* mouse name */
     float accelx;		/* Acceleration in the X axis */
     float accely;		/* Acceleration in the Y axis */
     float accelz;		/* Acceleration in the wheel axis */
@@ -329,7 +328,7 @@ static struct rodentparam {
 } rodent = {
     .flags = 0,
     .portname = NULL,
-    .rtype = MOUSE_PROTO_UNKNOWN,
+    .dev.type = MOUSE_PROTO_UNKNOWN,
     .zmap = { 0, 0, 0, 0 },
     .wmode = 0,
     .mfd = -1,
@@ -701,18 +700,18 @@ main(int argc, char *argv[])
 	    /* print some information */
 	    if (identify != ID_NONE) {
 		if (identify == ID_ALL)
-		    printf("%s %s %s\n",
-			rodent.portname, r_name(rodent.rtype), rodent.model);
+		    printf("%s %s %s\n", rodent.portname,
+		        r_name(rodent.dev.type), rodent.dev.name);
 		else if (identify & ID_PORT)
 		    printf("%s\n", rodent.portname);
 		else if (identify & ID_TYPE)
-		    printf("%s\n", r_name(rodent.rtype));
+		    printf("%s\n", r_name(rodent.dev.type));
 		else if (identify & ID_MODEL)
-		    printf("%s\n", rodent.model);
+		    printf("%s\n", rodent.dev.name);
 		exit(0);
 	    } else {
 		debug("port: %s  type: %s  model: %s",
-		    rodent.portname, r_name(rodent.rtype), rodent.model);
+		    rodent.portname, r_name(rodent.dev.type), rodent.dev.name);
 	    }
 
 	    if (rodent.mfd == -1) {
@@ -1218,7 +1217,8 @@ r_identify(void)
 
 	/* maybe this is a evdev mouse... */
 	if (ioctl(rodent.mfd, EVIOCGNAME(
-		  sizeof(rodent.model) - 1), rodent.model) < 0 ||
+		  sizeof(rodent.dev.name) - 1), rodent.dev.name) < 0 ||
+	    ioctl(rodent.mfd, EVIOCGID, &rodent.dev.id) < 0 ||
 	    ioctl(rodent.mfd, EVIOCGBIT(EV_REL,
 	          sizeof(rel_bits)), rel_bits) < 0 ||
 	    ioctl(rodent.mfd, EVIOCGBIT(EV_ABS,
@@ -1229,12 +1229,13 @@ r_identify(void)
 	}
 
 	/* Do not loop events */
-	if (strncmp(rodent.model, "System mouse", sizeof(rodent.model)) == 0)
+	if (strncmp(rodent.dev.name, "System mouse", sizeof(rodent.dev.name))
+	    == 0)
 		return (MOUSE_PROTO_UNKNOWN);
 
-	rodent.rtype = r_identify_evdev(key_bits, rel_bits, abs_bits);
+	rodent.dev.type = r_identify_evdev(key_bits, rel_bits, abs_bits);
 
-	switch (rodent.rtype) {
+	switch (rodent.dev.type) {
 	case MOUSE_PROTO_TOUCHPAD:
 		if (ioctl(rodent.mfd, EVIOCGABS(ABS_X), &ai) < 0)
 			return (MOUSE_PROTO_UNKNOWN);
@@ -1285,11 +1286,11 @@ r_identify(void)
 	case MOUSE_PROTO_MOUSE:
 		break;
 	default:
-		debug("unsupported evdev type: %s", r_name(rodent.rtype));
+		debug("unsupported evdev type: %s", r_name(rodent.dev.type));
 		return (MOUSE_PROTO_UNKNOWN);
 	}
 
-	return (rodent.rtype);
+	return (rodent.dev.type);
 }
 
 static const char *
@@ -1454,7 +1455,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 		}
 	}
 
-	if (rodent.rtype == MOUSE_PROTO_TOUCHPAD) {
+	if (rodent.dev.type == MOUSE_PROTO_TOUCHPAD) {
 		if (debug > 1)
 			debug("absolute data %d,%d,%d,%d", ev.st.x, ev.st.y,
 			    ev.st.p, ev.st.w);

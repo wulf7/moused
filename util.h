@@ -51,6 +51,12 @@ enum device_type {
 	MOUSE_PROTO_JOYSTICK,
 };
 
+struct device {
+	enum device_type type;
+	char name[80];
+	struct input_id id;
+};
+
 /**
  * @ingroup base
  *
