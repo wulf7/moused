@@ -202,16 +202,16 @@ static struct scroll {
 
 /* local variables */
 
-/* types (the table must be ordered by MOUSE_PROTO_XXX in mouse.h) */
+/* types (the table must be ordered by DEVICE_TYPE_XXX in util.h) */
 static const char *rnames[] = {
-	[MOUSE_PROTO_MOUSE]		= "mouse",
-	[MOUSE_PROTO_POINTINGSTICK]	= "pointing stick",
-	[MOUSE_PROTO_TOUCHPAD]		= "touchpad",
-	[MOUSE_PROTO_TOUCHSCREEN]	= "touchscreen",
-	[MOUSE_PROTO_TABLET]		= "tablet",
-	[MOUSE_PROTO_TABLET_PAD]	= "tablet pad",
-	[MOUSE_PROTO_KEYBOARD]		= "keyboard",
-	[MOUSE_PROTO_JOYSTICK]		= "joystick",
+	[DEVICE_TYPE_MOUSE]		= "mouse",
+	[DEVICE_TYPE_POINTINGSTICK]	= "pointing stick",
+	[DEVICE_TYPE_TOUCHPAD]		= "touchpad",
+	[DEVICE_TYPE_TOUCHSCREEN]	= "touchscreen",
+	[DEVICE_TYPE_TABLET]		= "tablet",
+	[DEVICE_TYPE_TABLET_PAD]	= "tablet pad",
+	[DEVICE_TYPE_KEYBOARD]		= "keyboard",
+	[DEVICE_TYPE_JOYSTICK]		= "joystick",
 };
 
 static struct tpcaps {
@@ -332,7 +332,7 @@ static struct rodentparam {
 } rodent = {
     .flags = 0,
     .dev.path = NULL,
-    .dev.type = MOUSE_PROTO_UNKNOWN,
+    .dev.type = DEVICE_TYPE_UNKNOWN,
     .quirks = NULL,
     .zmap = { 0, 0, 0, 0 },
     .wmode = 0,
@@ -453,7 +453,7 @@ static void	usage(void);
 static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 		    __printflike(3, 4);
 
-static int	r_identify(void);
+static enum device_type	r_identify(int fd, struct device *dev);
 static const char *r_name(int type);
 static void	r_init(void);
 static int	r_protocol(struct input_event *b, mousestatus_t *act);
@@ -716,10 +716,19 @@ main(int argc, char *argv[])
 	if (quirks == NULL)
 		logwarnx("cannot open configuration file %s", config_file);
 
-	if (r_identify() == MOUSE_PROTO_UNKNOWN) {
-		debug("cannot determine mouse type on %s", rodent.dev.path);
+	switch (r_identify(rodent.mfd, &rodent.dev)){
+	case DEVICE_TYPE_UNKNOWN:
+		debug("cannot determine device type on %s", rodent.dev.path);
+		goto out;
+	case DEVICE_TYPE_MOUSE:
+	case DEVICE_TYPE_TOUCHPAD:
+		break;
+	default:
+		debug("unsupported device type: %s on %s",
+		    r_name(rodent.dev.type), rodent.dev.path);
 		goto out;
 	}
+
 	if (grab && ioctl(rodent.mfd, EVIOCGRAB, 1) == -1) {
 		logwarnx("unable to grab %s", rodent.dev.path);
 		goto out;
@@ -1178,21 +1187,43 @@ bit_find(bitstr_t *array, int start, int stop)
 }
 
 /* Derived from EvdevProbe() function of xf86-input-evdev driver */
-static int
-r_identify_evdev(bitstr_t *key_bits, bitstr_t *rel_bits, bitstr_t *abs_bits)
+static enum device_type
+r_identify(int fd, struct device *dev)
 {
-	bool has_keys = bit_find(key_bits, 0, BTN_MISC - 1);
-	bool has_buttons = bit_find(key_bits, BTN_MISC, BTN_JOYSTICK - 1);
-	bool has_lmr = bit_find(key_bits, BTN_LEFT, BTN_MIDDLE);
-	bool has_rel_axes = bit_find(rel_bits, 0, REL_MAX);
-	bool has_abs_axes = bit_find(abs_bits, 0, ABS_MAX);
-	bool has_mt = bit_find(abs_bits, ABS_MT_SLOT, ABS_MAX);
+	bitstr_t bit_decl(key_bits, KEY_CNT); /* */
+	bitstr_t bit_decl(rel_bits, REL_CNT); /* Evdev capabilities */
+	bitstr_t bit_decl(abs_bits, ABS_CNT); /* */
+	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
+	bool has_keys, has_buttons, has_lmr, has_rel_axes, has_abs_axes;
+	bool has_mt;
+
+	/* maybe this is a evdev mouse... */
+	if (ioctl(fd, EVIOCGNAME(sizeof(dev->name) - 1), dev->name) < 0 ||
+	    ioctl(fd, EVIOCGID, &dev->id) < 0 ||
+	    ioctl(fd, EVIOCGBIT(EV_REL, sizeof(rel_bits)), rel_bits) < 0 ||
+	    ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits) < 0 ||
+	    ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) < 0 ||
+	    ioctl(fd, EVIOCGPROP(sizeof(prop_bits)), prop_bits) < 0) {
+		return (DEVICE_TYPE_UNKNOWN);
+	}
+
+	/* Do not loop events */
+	if (strncmp(dev->name, "System mouse", sizeof(dev->name)) == 0)
+		return (DEVICE_TYPE_UNKNOWN);
+
+	has_keys = bit_find(key_bits, 0, BTN_MISC - 1);
+	has_buttons = bit_find(key_bits, BTN_MISC, BTN_JOYSTICK - 1);
+	has_lmr = bit_find(key_bits, BTN_LEFT, BTN_MIDDLE);
+	has_rel_axes = bit_find(rel_bits, 0, REL_MAX);
+	has_abs_axes = bit_find(abs_bits, 0, ABS_MAX);
+	has_mt = bit_find(abs_bits, ABS_MT_SLOT, ABS_MAX);
+	dev->type = DEVICE_TYPE_UNKNOWN;
 
 	if (has_abs_axes) {
 		if (has_mt && !has_buttons) {
 			/* TBD:Improve joystick detection */
 			if (bit_test(key_bits, BTN_JOYSTICK)) {
-				return (MOUSE_PROTO_JOYSTICK);
+				return (DEVICE_TYPE_JOYSTICK);
 			} else {
 				has_buttons = true;
 			}
@@ -1203,34 +1234,46 @@ r_identify_evdev(bitstr_t *key_bits, bitstr_t *rel_bits, bitstr_t *abs_bits)
 			if (bit_test(key_bits, BTN_TOOL_PEN) ||
 			    bit_test(key_bits, BTN_STYLUS) ||
 			    bit_test(key_bits, BTN_STYLUS2)) {
-				return (MOUSE_PROTO_TABLET);
+				dev->type = DEVICE_TYPE_TABLET;;
 			} else if (bit_test(abs_bits, ABS_PRESSURE) ||
 				   bit_test(key_bits, BTN_TOUCH)) {
 				if (has_lmr ||
 				    bit_test(key_bits, BTN_TOOL_FINGER)) {
-					return (MOUSE_PROTO_TOUCHPAD);
+					dev->type = DEVICE_TYPE_TOUCHPAD;
 				} else {
-					return (MOUSE_PROTO_TOUCHSCREEN);
+					dev->type = DEVICE_TYPE_TOUCHSCREEN;
 				}
 			/* some touchscreens use BTN_LEFT rather than BTN_TOUCH */
 			} else if (!(bit_test(rel_bits, REL_X) &&
 				     bit_test(rel_bits, REL_Y)) &&
 				     has_lmr) {
-				return (MOUSE_PROTO_TOUCHSCREEN);
+				dev->type = DEVICE_TYPE_TOUCHSCREEN;
 			}
 		}
 	}
 
-	if (has_keys)
-		return (MOUSE_PROTO_KEYBOARD);
-	else if (has_rel_axes || has_buttons)
-		return (MOUSE_PROTO_MOUSE);
+	if (dev->type == DEVICE_TYPE_UNKNOWN) {
+		if (has_keys)
+			dev->type = DEVICE_TYPE_KEYBOARD;
+		else if (has_rel_axes || has_buttons)
+			dev->type = DEVICE_TYPE_MOUSE;
+	}
 
-	return (MOUSE_PROTO_UNKNOWN);
+	return (dev->type);
 }
 
-static int
-r_identify(void)
+static const char *
+r_name(int type)
+{
+    const char *unknown = "unknown";
+
+    return (type == DEVICE_TYPE_UNKNOWN ||
+	type >= (int)(sizeof(rnames) / sizeof(rnames[0])) ?
+	unknown : rnames[type]);
+}
+
+static void
+r_init(void)
 {
 	struct input_absinfo ai;
 	bitstr_t bit_decl(key_bits, KEY_CNT); /* */
@@ -1239,97 +1282,58 @@ r_identify(void)
 	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
 	int sz_x, sz_y;
 
-	/* maybe this is a evdev mouse... */
-	if (ioctl(rodent.mfd, EVIOCGNAME(
-		  sizeof(rodent.dev.name) - 1), rodent.dev.name) < 0 ||
-	    ioctl(rodent.mfd, EVIOCGID, &rodent.dev.id) < 0 ||
-	    ioctl(rodent.mfd, EVIOCGBIT(EV_REL,
-	          sizeof(rel_bits)), rel_bits) < 0 ||
-	    ioctl(rodent.mfd, EVIOCGBIT(EV_ABS,
-	          sizeof(abs_bits)), abs_bits) < 0 ||
-	    ioctl(rodent.mfd, EVIOCGBIT(EV_KEY,
-	          sizeof(key_bits)), key_bits) < 0) {
-		return (MOUSE_PROTO_UNKNOWN);
-	}
+	if (rodent.dev.type != DEVICE_TYPE_TOUCHPAD)
+		return;
 
-	/* Do not loop events */
-	if (strncmp(rodent.dev.name, "System mouse", sizeof(rodent.dev.name))
-	    == 0)
-		return (MOUSE_PROTO_UNKNOWN);
+	ioctl(rodent.mfd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits);
+	ioctl(rodent.mfd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits);
 
-	rodent.dev.type = r_identify_evdev(key_bits, rel_bits, abs_bits);
-
-	switch (rodent.dev.type) {
-	case MOUSE_PROTO_TOUCHPAD:
-		if (ioctl(rodent.mfd, EVIOCGABS(ABS_X), &ai) < 0)
-			return (MOUSE_PROTO_UNKNOWN);
+	if (ioctl(rodent.mfd, EVIOCGABS(ABS_X), &ai) >= 0) {
 		synhw.min_x = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
 		synhw.max_x = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
 		sz_x = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
 		synhw.res_x = ai.resolution == 0 ?
 		    DFLT_TPAD_RESOLUTION : ai.resolution;
-		if (ioctl(rodent.mfd, EVIOCGABS(ABS_Y), &ai) < 0)
-			return (MOUSE_PROTO_UNKNOWN);
+	}
+	if (ioctl(rodent.mfd, EVIOCGABS(ABS_Y), &ai) >= 0) {
 		synhw.min_y = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
 		synhw.max_y = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
 		sz_y = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
 		synhw.res_y = ai.resolution == 0 ?
 		    DFLT_TPAD_RESOLUTION : ai.resolution;
-		if (bit_test(key_bits, BTN_TOUCH))
-			synhw.cap_touch = true;
-		if (bit_test(abs_bits, ABS_PRESSURE))
-			synhw.cap_pressure = true;
-		if (bit_test(abs_bits, ABS_TOOL_WIDTH))
-			synhw.cap_width = true;
-		if (bit_test(abs_bits, ABS_MT_SLOT) &&
-		    bit_test(abs_bits, ABS_MT_TRACKING_ID) &&
-		    bit_test(abs_bits, ABS_MT_POSITION_X) &&
-		    bit_test(abs_bits, ABS_MT_POSITION_Y))
-			synhw.is_mt = true;
-		if (ioctl(rodent.mfd,
-		    EVIOCGPROP(sizeof(prop_bits)), prop_bits) < 0)
-			return (MOUSE_PROTO_UNKNOWN);
+	}
+	if (bit_test(key_bits, BTN_TOUCH))
+		synhw.cap_touch = true;
+	if (bit_test(abs_bits, ABS_PRESSURE))
+		synhw.cap_pressure = true;
+	if (bit_test(abs_bits, ABS_TOOL_WIDTH))
+		synhw.cap_width = true;
+	if (bit_test(abs_bits, ABS_MT_SLOT) &&
+	    bit_test(abs_bits, ABS_MT_TRACKING_ID) &&
+	    bit_test(abs_bits, ABS_MT_POSITION_X) &&
+	    bit_test(abs_bits, ABS_MT_POSITION_Y))
+		synhw.is_mt = true;
+	if (ioctl(rodent.mfd, EVIOCGPROP(sizeof(prop_bits)), prop_bits) >= 0) {
 		if (bit_test(prop_bits, INPUT_PROP_BUTTONPAD))
 			synhw.is_clickpad = true;
-		/* Set bottom quarter as 42% - 16% - 42% sized softbuttons */
-		if (synhw.is_clickpad) {
-			syninfo.softbuttons_y = sz_y / 4;
-			if (bit_test(prop_bits, INPUT_PROP_TOPBUTTONPAD))
-				syninfo.softbuttons_y = -syninfo.softbuttons_y;
-			syninfo.softbutton2_x = sz_x * 11 / 25;
-			syninfo.softbutton3_x = sz_x * 14 / 25;
-		}
-		/* Normalize pointer movement to match 200dpi mouse */
-		rodent.accelx *= DFLT_MOUSE_RESOLUTION;
-		rodent.accelx /= synhw.res_x;
-		rodent.accely *= DFLT_MOUSE_RESOLUTION;
-		rodent.accely /= synhw.res_y;
-		rodent.accelz *= DFLT_MOUSE_RESOLUTION;
-		rodent.accelz /= (synhw.res_x * DFLT_LINEHEIGHT);
-		/* FALLTHROUGH */
-	case MOUSE_PROTO_MOUSE:
-		break;
-	default:
-		debug("unsupported evdev type: %s", r_name(rodent.dev.type));
-		return (MOUSE_PROTO_UNKNOWN);
 	}
+	/* Set bottom quarter as 42% - 16% - 42% sized softbuttons */
+	if (synhw.is_clickpad) {
+		syninfo.softbuttons_y = sz_y / 4;
+		if (bit_test(prop_bits, INPUT_PROP_TOPBUTTONPAD))
+			syninfo.softbuttons_y = -syninfo.softbuttons_y;
+		syninfo.softbutton2_x = sz_x * 11 / 25;
+		syninfo.softbutton3_x = sz_x * 14 / 25;
+	}
+	/* Normalize pointer movement to match 200dpi mouse */
+	rodent.accelx *= DFLT_MOUSE_RESOLUTION;
+	rodent.accelx /= synhw.res_x;
+	rodent.accely *= DFLT_MOUSE_RESOLUTION;
+	rodent.accely /= synhw.res_y;
+	rodent.accelz *= DFLT_MOUSE_RESOLUTION;
+	rodent.accelz /= (synhw.res_x * DFLT_LINEHEIGHT);
 
-	return (rodent.dev.type);
-}
-
-static const char *
-r_name(int type)
-{
-    const char *unknown = "unknown";
-
-    return (type == MOUSE_PROTO_UNKNOWN ||
-	type >= (int)(sizeof(rnames) / sizeof(rnames[0])) ?
-	unknown : rnames[type]);
-}
-
-static void
-r_init(void)
-{
+//		debug("unsupported evdev type: %s", r_name(rodent.dev.type));
 }
 
 static int
@@ -1479,7 +1483,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 		}
 	}
 
-	if (rodent.dev.type == MOUSE_PROTO_TOUCHPAD) {
+	if (rodent.dev.type == DEVICE_TYPE_TOUCHPAD) {
 		if (debug > 1)
 			debug("absolute data %d,%d,%d,%d", ev.st.x, ev.st.y,
 			    ev.st.p, ev.st.w);

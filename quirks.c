@@ -1234,25 +1234,25 @@ match_fill_udev_type(struct match *m,
 		     struct device *device)
 {
 	switch (device->type) {
-	case MOUSE_PROTO_MOUSE:
+	case DEVICE_TYPE_MOUSE:
 		m->udev_type |= UDEV_MOUSE;
 		break;
-	caseMOUSE_PROTO_POINTINGSTICK:
+	caseDEVICE_TYPE_POINTINGSTICK:
 		m->udev_type |= UDEV_MOUSE | UDEV_POINTINGSTICK;
 		break;
-	case MOUSE_PROTO_TOUCHPAD:
+	case DEVICE_TYPE_TOUCHPAD:
 		m->udev_type |= UDEV_TOUCHPAD;
 		break;
-	case MOUSE_PROTO_TABLET:
+	case DEVICE_TYPE_TABLET:
 		m->udev_type |= UDEV_TABLET;
 		break;
-	case MOUSE_PROTO_TABLET_PAD:
+	case DEVICE_TYPE_TABLET_PAD:
 		m->udev_type |= UDEV_TABLET_PAD;
 		break;
-	case MOUSE_PROTO_KEYBOARD:
+	case DEVICE_TYPE_KEYBOARD:
 		m->udev_type |= UDEV_KEYBOARD;
 		break;
-	case MOUSE_PROTO_JOYSTICK:
+	case DEVICE_TYPE_JOYSTICK:
 		m->udev_type |= UDEV_JOYSTICK;
 		break;
 	default:
