@@ -149,15 +149,15 @@ enum quirks_log_type {
  * the custom QLOG_* log priorities. Otherwise, the log handler only uses
  * the moused (syslog) log priorities.
  *
- * @param data_path The directory containing the various data files
- * @param override_file A file path containing custom overrides
+ * @param config_file A file path to main configuration file
+ * @param quirks_path The directory containing the various quirk files
  * @param log_handler The moused log handler called for debugging output
  *
  * @return an opaque handle to the context
  */
 struct quirks_context *
-quirks_init_subsystem(const char *data_path,
-		      const char *override_file,
+quirks_init_subsystem(const char *config_file,
+		      const char *quirks_path,
 		      moused_log_handler log_handler,
 		      enum quirks_log_type log_type);
 

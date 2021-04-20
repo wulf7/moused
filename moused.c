@@ -73,6 +73,7 @@ __FBSDID("$FreeBSD$");
 #include <unistd.h>
 
 #include "util.h"
+#include "quirks.h"
 
 /*
  * bitstr_t implementation must be identical to one found in EVIOCG*
@@ -185,6 +186,9 @@ static bool	grab = false;
 static int	identify = ID_NONE;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
+static const char *config_file = "moused.conf";
+static const char *quirks_path = ".";
+static struct quirks_context *quirks;
 
 #define SCROLL_NOTSCROLLING	0
 #define SCROLL_PREPARE		1
@@ -308,6 +312,7 @@ static struct evdev_state {
 static struct rodentparam {
     int flags;
     struct device dev;		/* Device */
+    struct quirks *quirks;	/* Configuration file and quirks */
     int zmap[4];		/* MOUSE_{X|Y}AXIS or a button number */
     int wmode;			/* wheel mode button number */
     int mfd;			/* mouse file descriptor */
@@ -328,6 +333,7 @@ static struct rodentparam {
     .flags = 0,
     .dev.path = NULL,
     .dev.type = MOUSE_PROTO_UNKNOWN,
+    .quirks = NULL,
     .zmap = { 0, 0, 0, 0 },
     .wmode = 0,
     .mfd = -1,
@@ -676,6 +682,12 @@ main(int argc, char *argv[])
 		usage();
 	}
 
+	quirks = quirks_init_subsystem(config_file, quirks_path,
+	    log_or_warn_va,
+	    background ? QLOG_MOUSED_LOGGING : QLOG_CUSTOM_LOG_PRIORITIES);
+	if (quirks == NULL)
+		logwarnx("cannot open configuration file %s", config_file);
+
 	if (setjmp(env) == 0) {
 	    signal(SIGHUP, hup);
 	    signal(SIGINT , cleanup);
@@ -726,9 +738,15 @@ main(int argc, char *argv[])
 		sigpause(0);
 	    }
 
+		rodent.quirks = quirks_fetch_for_device(quirks, &rodent.dev);
+
 	    r_init();			/* call init function */
 	    moused();
+
+		quirks_unref(rodent.quirks);
 	}
+
+	quirks_context_unref(quirks);
 
 	if (rodent.mfd != -1)
 	    close(rodent.mfd);

@@ -1073,14 +1073,14 @@ parse_files(struct quirks_context *ctx, const char *data_path)
 }
 
 struct quirks_context *
-quirks_init_subsystem(const char *data_path,
-		      const char *override_file,
+quirks_init_subsystem(const char *config_file,
+		      const char *quirks_path,
 		      moused_log_handler log_handler,
 		      enum quirks_log_type log_type)
 {
 	struct quirks_context *ctx = zalloc(sizeof *ctx);
 
-	assert(data_path);
+	assert(config_file);
 
 	ctx->refcount = 1;
 	ctx->log_handler = log_handler;
@@ -1088,17 +1088,17 @@ quirks_init_subsystem(const char *data_path,
 	list_init(&ctx->quirks);
 	list_init(&ctx->sections);
 
-	qlog_debug(ctx, "%s is data root\n", data_path);
+	qlog_debug(ctx, "%s is configuration file\n", config_file);
 
 	ctx->dmi = init_dmi();
 	ctx->dt = init_dt();
 	if (!ctx->dmi && !ctx->dt)
 		goto error;
 
-	if (!parse_files(ctx, data_path))
+	if (!parse_file(ctx, config_file))
 		goto error;
 
-	if (override_file && !parse_file(ctx, override_file))
+	if (quirks_path && !parse_files(ctx, quirks_path))
 		goto error;
 
 	return ctx;
