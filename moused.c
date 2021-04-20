@@ -447,8 +447,7 @@ static moused_log_handler	log_or_warn_va;
 static void	linacc(int, int, int, int*, int*, int*);
 static void	expoacc(int, int, int, int*, int*, int*);
 static void	moused(void);
-static void	hup(int sig);
-static void	cleanup(int sig);
+static void	reset(int sig);
 static void	pause_mouse(int sig);
 static void	usage(void);
 static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
@@ -682,78 +681,83 @@ main(int argc, char *argv[])
 		usage();
 	}
 
+	switch (setjmp(env)) {
+	case SIGHUP:
+		quirks_unref(rodent.quirks);
+		quirks_context_unref(quirks);
+		close(rodent.mfd);
+		/* FALLTHROUGH */
+	case 0:
+		break;
+	case SIGINT:
+	case SIGQUIT:
+	case SIGTERM:
+		exit(0);
+		/* NOT REACHED */
+	default:
+		goto out;
+	}
+
+	signal(SIGHUP , reset);
+	signal(SIGINT , reset);
+	signal(SIGQUIT, reset);
+	signal(SIGTERM, reset);
+	signal(SIGUSR1, pause_mouse);
+
+	rodent.mfd = open(rodent.dev.path, O_RDWR | O_NONBLOCK);
+	if (rodent.mfd == -1) {
+		logerr(1, "unable to open %s", rodent.dev.path);
+		goto out;
+	}
+
 	quirks = quirks_init_subsystem(config_file, quirks_path,
 	    log_or_warn_va,
 	    background ? QLOG_MOUSED_LOGGING : QLOG_CUSTOM_LOG_PRIORITIES);
 	if (quirks == NULL)
 		logwarnx("cannot open configuration file %s", config_file);
 
-	if (setjmp(env) == 0) {
-	    signal(SIGHUP, hup);
-	    signal(SIGINT , cleanup);
-	    signal(SIGQUIT, cleanup);
-	    signal(SIGTERM, cleanup);
-	    signal(SIGUSR1, pause_mouse);
-
-	    rodent.mfd = open(rodent.dev.path, O_RDWR | O_NONBLOCK);
-	    if (rodent.mfd == -1)
-		logerr(1, "unable to open %s", rodent.dev.path);
-	    if (r_identify() == MOUSE_PROTO_UNKNOWN) {
+	if (r_identify() == MOUSE_PROTO_UNKNOWN) {
 		debug("cannot determine mouse type on %s", rodent.dev.path);
-		close(rodent.mfd);
-		rodent.mfd = -1;
-	    }
-		if (rodent.mfd != -1 && grab &&
-		    ioctl(rodent.mfd, EVIOCGRAB, 1) == -1) {
-			logwarnx("unable to grab %s", rodent.dev.path);
-			close(rodent.mfd);
-			rodent.mfd = -1;
-		}
-
-	    /* print some information */
-	    if (identify != ID_NONE) {
-		if (identify == ID_ALL)
-		    printf("%s %s %s\n", rodent.dev.path,
-		        r_name(rodent.dev.type), rodent.dev.name);
-		else if (identify & ID_PORT)
-		    printf("%s\n", rodent.dev.path);
-		else if (identify & ID_TYPE)
-		    printf("%s\n", r_name(rodent.dev.type));
-		else if (identify & ID_MODEL)
-		    printf("%s\n", rodent.dev.name);
-		exit(0);
-	    } else {
-		debug("port: %s  type: %s  model: %s",
-		    rodent.dev.path, r_name(rodent.dev.type), rodent.dev.name);
-	    }
-
-	    if (rodent.mfd == -1) {
-		/*
-		 * We cannot continue because of error.  Exit if the
-		 * program has not become a daemon.  Otherwise, block
-		 * until the user corrects the problem and issues SIGHUP.
-		 */
-		if (!background)
-		    exit(1);
-		sigpause(0);
-	    }
-
-		rodent.quirks = quirks_fetch_for_device(quirks, &rodent.dev);
-
-	    r_init();			/* call init function */
-	    moused();
-
-		quirks_unref(rodent.quirks);
+		goto out;
+	}
+	if (grab && ioctl(rodent.mfd, EVIOCGRAB, 1) == -1) {
+		logwarnx("unable to grab %s", rodent.dev.path);
+		goto out;
 	}
 
+	/* print some information */
+	if (identify != ID_NONE) {
+		if (identify == ID_ALL)
+			printf("%s %s %s\n", rodent.dev.path,
+			    r_name(rodent.dev.type), rodent.dev.name);
+		else if (identify & ID_PORT)
+			printf("%s\n", rodent.dev.path);
+		else if (identify & ID_TYPE)
+			printf("%s\n", r_name(rodent.dev.type));
+		else if (identify & ID_MODEL)
+			printf("%s\n", rodent.dev.name);
+		exit(0);
+	} else {
+		debug("port: %s  type: %s  model: %s",
+		    rodent.dev.path, r_name(rodent.dev.type), rodent.dev.name);
+	}
+
+	rodent.quirks = quirks_fetch_for_device(quirks, &rodent.dev);
+
+	r_init();			/* call init function */
+	moused();
+
+	quirks_unref(rodent.quirks);
+
+out:
 	quirks_context_unref(quirks);
 
 	if (rodent.mfd != -1)
-	    close(rodent.mfd);
+		close(rodent.mfd);
 	if (rodent.cfd != -1)
-	    close(rodent.cfd);
+		close(rodent.cfd);
 
-    exit(0);
+	exit(0);
 }
 
 /*
@@ -1105,21 +1109,15 @@ moused(void)
 }
 
 static void
-hup(__unused int sig)
+reset(int sig)
 {
-    longjmp(env, 1);
-}
-
-static void
-cleanup(__unused int sig)
-{
-    exit(0);
+	longjmp(env, sig);
 }
 
 static void
 pause_mouse(__unused int sig)
 {
-    paused = !paused;
+	paused = !paused;
 }
 
 /**
