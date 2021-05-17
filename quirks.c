@@ -289,6 +289,41 @@ quirk_get_name(enum quirk q)
 	case QUIRK_ATTR_EVENT_CODE_ENABLE:		return "AttrEventCodeEnable";
 	case QUIRK_ATTR_INPUT_PROP_DISABLE:		return "AttrInputPropDisable";
 	case QUIRK_ATTR_INPUT_PROP_ENABLE:		return "AttrInputPropEnable";
+
+	case MOUSED_CHORD_MIDDLE:			return "MousedChordMiddle";
+	case MOUSED_CLICK_THRESHOLD:			return "MousedClickThreshold";
+	case MOUSED_DRIFT_DISTANCE:			return "MousedDriftDistance";
+	case MOUSED_DRIFT_TIME:				return "MousedDriftTime";
+	case MOUSED_DRIFT_AFTER:			return "MousedDriftAfter";
+	case MOUSED_EMULATE_THIRD_BUTTON:		return "MousedEmulateThirdButton";
+	case MOUSED_EMULATE_THIRD_BUTTON_TIMEOUT:	return "MousedEmulateThirdButtonTimeout";
+	case MOUSED_EXPONENTIAL_ACCEL:			return "MousedExponentialAccel";
+	case MOUSED_EXPONENTIAL_OFFSET:			return "MousedExponentialOffset";
+	case MOUSED_HSCROLL_ENABLE:			return "MousedHScrollEnable";
+	case MOUSED_GRAB_DEVICE:			return "MousedGrabDevice";
+	case MOUSED_LINEAR_ACCEL_X:			return "MousedLinearAccelX";
+	case MOUSED_LINEAR_ACCEL_Y:			return "MousedLinearAccelY";
+	case MOUSED_LINEAR_ACCEL_Z:			return "MousedLinearAccelZ";
+	case MOUSED_MAP_Z_AXIS:				return "MousedMapZAxis";
+	case MOUSED_PID_FILE:				return "MousedPidFile";
+	case MOUSED_VIRTUAL_SCROLL_ENABLE:		return "MousedVirtualScrollEnable";
+	case MOUSED_VIRTUAL_SCROLL_DISTANCE:		return "MousedVirtualScrollDistance";
+	case MOUSED_WMODE:				return "MousedWMode";
+
+	case MOUSED_TWO_FINGER_SCROLL:			return "MousedTwoFingerScroll";
+	case MOUSED_NATURAL_SCROLL:			return "MousedNaturalScroll";
+	case MOUSED_THREE_FINGER_DRAG:			return "MousedThreeFingerDrag";
+	case MOUSED_MIN_PRESSURE:			return "MousedMinPressure";
+	case MOUSED_MAX_PRESSURE:			return "MousedMaxPressure";
+	case MOUSED_MAX_WIDTH:				return "MousedMaxWidth";
+	case MOUSED_TAP_TIMEOUT:			return "MousedTapTimeout";
+	case MOUSED_TAP_THRESHOLD:			return "MousedTapThreshold";
+	case MOUSED_TAP_MAX_DELTA:			return "MousedTapMaxDelta";
+	case MOUSED_TAPHOLD_TIMEOUT:			return "MousedTapholdTimeout";
+	case MOUSED_VSCROLL_MIN_DELTA:			return "MousedVScrollMinDelta";
+	case MOUSED_VSCROLL_HOR_AREA:			return "MousedVScrollHorArea";
+	case MOUSED_VSCROLL_VER_AREA:			return "MousedVScrollVerArea";
+
 	default:
 		abort();
 	}
@@ -822,6 +857,287 @@ out:
 }
 
 /**
+ * Parse a MousedFooBar=banana line.
+ *
+ * @param section The section struct to be filled in
+ * @param key The MousedFooBar part of the line
+ * @param value The banana part of the line.
+ *
+ * Value parsing depends on the attribute type.
+ *
+ * @return true on success, false otherwise.
+ */
+static inline bool
+parse_moused(struct quirks_context *ctx,
+	     struct section *s,
+	     const char *key,
+	     const char *value)
+{
+	struct property *p = property_new();
+	bool rc = false;
+	struct quirk_dimensions dim;
+	struct quirk_range range;
+	unsigned int v;
+	bool b;
+	double d;
+
+	if (streq(key, quirk_get_name(MOUSED_CHORD_MIDDLE))) {
+		p->id = MOUSED_HSCROLL_ENABLE;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_CLICK_THRESHOLD))) {
+		p->id = MOUSED_CLICK_THRESHOLD;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_DRIFT_DISTANCE))) {
+		p->id = MOUSED_DRIFT_DISTANCE;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_DRIFT_TIME))) {
+		p->id = MOUSED_DRIFT_TIME;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_DRIFT_AFTER))) {
+		p->id = MOUSED_DRIFT_AFTER;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_EMULATE_THIRD_BUTTON))) {
+		p->id = MOUSED_EMULATE_THIRD_BUTTON;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_EMULATE_THIRD_BUTTON_TIMEOUT))) {
+		p->id = QUIRK_ATTR_THUMB_SIZE_THRESHOLD;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_EXPONENTIAL_ACCEL))) {
+		p->id = MOUSED_EXPONENTIAL_ACCEL;
+		if (!safe_atod(value, &d))
+			goto out;
+		p->type = PT_DOUBLE;
+		p->value.d = d;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_EXPONENTIAL_OFFSET))) {
+		p->id = MOUSED_EXPONENTIAL_OFFSET;
+		if (!safe_atod(value, &d))
+			goto out;
+		p->type = PT_DOUBLE;
+		p->value.d = d;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_HSCROLL_ENABLE))) {
+		p->id = MOUSED_HSCROLL_ENABLE;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_GRAB_DEVICE))) {
+		p->id = MOUSED_GRAB_DEVICE;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_LINEAR_ACCEL_X))) {
+		p->id = MOUSED_LINEAR_ACCEL_X;
+		if (!safe_atod(value, &d))
+			goto out;
+		p->type = PT_DOUBLE;
+		p->value.d = d;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_LINEAR_ACCEL_Y))) {
+		p->id = MOUSED_LINEAR_ACCEL_Y;
+		if (!safe_atod(value, &d))
+			goto out;
+		p->type = PT_DOUBLE;
+		p->value.d = d;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_LINEAR_ACCEL_Z))) {
+		p->id = MOUSED_LINEAR_ACCEL_Z;
+		if (!safe_atod(value, &d))
+			goto out;
+		p->type = PT_DOUBLE;
+		p->value.d = d;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_MAP_Z_AXIS))) {
+	} else if (streq(key, quirk_get_name(MOUSED_PID_FILE))) {
+	} else if (streq(key, quirk_get_name(MOUSED_VIRTUAL_SCROLL_ENABLE))) {
+		p->id = MOUSED_VIRTUAL_SCROLL_ENABLE;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_VIRTUAL_SCROLL_DISTANCE))) {
+	} else if (streq(key, quirk_get_name(MOUSED_WMODE))) {
+		p->id = MOUSED_WMODE;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+
+	} else if (streq(key, quirk_get_name(MOUSED_TWO_FINGER_SCROLL))) {
+		p->id = MOUSED_TWO_FINGER_SCROLL;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_NATURAL_SCROLL))) {
+		p->id = MOUSED_NATURAL_SCROLL;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_THREE_FINGER_DRAG))) {
+		p->id = MOUSED_THREE_FINGER_DRAG;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_MIN_PRESSURE))) {
+		p->id = MOUSED_MIN_PRESSURE;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_MAX_PRESSURE))) {
+		p->id = MOUSED_MAX_PRESSURE;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_MAX_WIDTH))) {
+		p->id = MOUSED_MAX_WIDTH;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_TAP_TIMEOUT))) {
+		p->id = MOUSED_TAP_TIMEOUT;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_TAP_THRESHOLD))) {
+		p->id = MOUSED_TAP_THRESHOLD;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_TAP_MAX_DELTA))) {
+		p->id = MOUSED_TAP_MAX_DELTA;
+		if (!safe_atod(value, &d))
+			goto out;
+		p->type = PT_DOUBLE;
+		p->value.d = d;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_TAPHOLD_TIMEOUT))) {
+		p->id = QUIRK_ATTR_THUMB_SIZE_THRESHOLD;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_VSCROLL_MIN_DELTA))) {
+		p->id = MOUSED_VSCROLL_MIN_DELTA;
+		if (!safe_atod(value, &d))
+			goto out;
+		p->type = PT_DOUBLE;
+		p->value.d = d;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_VSCROLL_HOR_AREA))) {
+		p->id = MOUSED_VSCROLL_HOR_AREA;
+		if (!safe_atod(value, &d))
+			goto out;
+		p->type = PT_DOUBLE;
+		p->value.d = d;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_VSCROLL_VER_AREA))) {
+		p->id = MOUSED_VSCROLL_VER_AREA;
+		if (!safe_atod(value, &d))
+			goto out;
+		p->type = PT_DOUBLE;
+		p->value.d = d;
+		rc = true;
+	} else {
+		qlog_error(ctx, "Unknown key %s in %s\n", key, s->name);
+	}
+out:
+	if (rc) {
+		list_append(&s->properties, &p->link);
+		s->has_property = true;
+	} else {
+		property_cleanup(p);
+	}
+	return rc;
+}
+
+/**
  * Parse a single line, expected to be in the format Key=value. Anything
  * else will be rejected with a failure.
  *
@@ -856,6 +1172,8 @@ parse_value_line(struct quirks_context *ctx, struct section *s, const char *line
 		rc = parse_model(ctx, s, key, value);
 	else if (strneq(key, "Attr", 4))
 		rc = parse_attr(ctx, s, key, value);
+	else if (strneq(key, "Moused", 6))
+		rc = parse_moused(ctx, s, key, value);
 	else
 		qlog_error(ctx, "Unknown value prefix %s\n", line);
 out:
