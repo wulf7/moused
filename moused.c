@@ -241,11 +241,11 @@ static struct tpinfo {
 	int	margin_left;		/* Left margin */
 	int	tap_timeout;		/* */
 	int	tap_threshold;		/* Minimum pressure to detect a tap */
-	float	tap_max_delta;		/* Length of segments above which a tap is ignored */
+	double	tap_max_delta;		/* Length of segments above which a tap is ignored */
 	int	taphold_timeout;	/* Maximum elapsed time between two taps to consider a tap-hold action */
-	float	vscroll_ver_area;	/* Area reserved for vertical virtual scrolling */
-	float	vscroll_hor_area;	/* Area reserved for horizontal virtual scrolling */
-	float	vscroll_min_delta;	/* Minimum movement to consider virtual scrolling */
+	double	vscroll_ver_area;	/* Area reserved for vertical virtual scrolling */
+	double	vscroll_hor_area;	/* Area reserved for horizontal virtual scrolling */
+	double	vscroll_min_delta;	/* Minimum movement to consider virtual scrolling */
 	int	softbuttons_y;		/* Vertical size of softbuttons area */
 	int	softbutton2_x;		/* Horizontal offset of 2-nd softbutton left edge */
 	int	softbutton3_x;		/* Horizontal offset of 3-rd softbutton left edge */
@@ -319,14 +319,14 @@ static struct rodentparam {
     int cfd;			/* /dev/consolectl file descriptor */
     long clickthreshold;	/* double click speed in msec */
     long button2timeout;	/* 3 button emulation timeout */
-    float accelx;		/* Acceleration in the X axis */
-    float accely;		/* Acceleration in the Y axis */
-    float accelz;		/* Acceleration in the wheel axis */
-    float expoaccel;		/* Exponential acceleration */
-    float expoffset;		/* Movement offset for exponential accel. */
-    float remainx;		/* Remainder on X, Y and wheel axis, ... */
-    float remainy;		/*    ...  respectively to compensate */
-    float remainz;		/*    ... for rounding errors. */
+    double accelx;		/* Acceleration in the X axis */
+    double accely;		/* Acceleration in the Y axis */
+    double accelz;		/* Acceleration in the wheel axis */
+    double expoaccel;		/* Exponential acceleration */
+    double expoffset;		/* Movement offset for exponential accel. */
+    double remainx;		/* Remainder on X, Y and wheel axis, ... */
+    double remainy;		/*    ...  respectively to compensate */
+    double remainz;		/*    ... for rounding errors. */
     int scrollthreshold;	/* Movement distance before virtual scrolling */
     int scrollspeed;		/* Movement distance to rate of scrolling */
 } rodent = {
@@ -494,7 +494,7 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'a':
-	    i = sscanf(optarg, "%f,%f,%f",
+	    i = sscanf(optarg, "%lf,%lf,%lf",
 	        &rodent.accelx, &rodent.accely, &rodent.accelz);
 	    if (i == 0) {
 		warnx("invalid linear acceleration argument '%s'", optarg);
@@ -508,7 +508,7 @@ main(int argc, char *argv[])
 
 	case 'A':
 	    rodent.flags |= ExponentialAcc;
-	    i = sscanf(optarg, "%f,%f", &rodent.expoaccel, &rodent.expoffset);
+	    i = sscanf(optarg, "%lf,%lf", &rodent.expoaccel, &rodent.expoffset);
 	    if (i == 0) {
 		warnx("invalid exponential acceleration argument '%s'", optarg);
 		usage();
@@ -780,7 +780,7 @@ out:
 static void
 linacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 {
-    float fdx, fdy, fdz;
+    double fdx, fdy, fdz;
 
     if (dx == 0 && dy == 0 && dz == 0) {
 	*movex = *movey = *movez = 0;
@@ -809,8 +809,8 @@ linacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 static void
 expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 {
-    static float lastlength[3] = {0.0, 0.0, 0.0};
-    float fdx, fdy, fdz, length, lbase, accel;
+    static double lastlength[3] = {0.0, 0.0, 0.0};
+    double fdx, fdy, fdz, length, lbase, accel;
 
     if (dx == 0 && dy == 0 && dz == 0) {
 	*movex = *movey = *movez = 0;
