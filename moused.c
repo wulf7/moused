@@ -232,8 +232,8 @@ static struct tpinfo {
 	bool	two_finger_scroll;	/* Enable two finger scrolling */
 	bool	natural_scroll;		/* Enable natural scrolling */
 	bool	three_finger_drag;	/* Enable dragging with three fingers */
-	int	min_pressure;		/* Min pressure to start an action */
-	int	max_pressure;		/* Maximum pressure to detect palm */
+	u_int	min_pressure;		/* Min pressure to start an action */
+	u_int	max_pressure;		/* Maximum pressure to detect palm */
 	int	max_width;		/* Max finger width to detect palm */
 	int	margin_top;		/* Top margin */
 	int	margin_right;		/* Right margin */
@@ -254,7 +254,7 @@ static struct tpinfo {
 	.natural_scroll = false,
 	.three_finger_drag = false,
 	.min_pressure = 1,
-	.max_pressure = 255,
+	.max_pressure = 130,
 	.max_width = 16,
 	.tap_timeout = 100,		/* ms */
 	.tap_threshold = 20,
@@ -1340,6 +1340,8 @@ r_init(void)
 		}
 		if (synhw.cap_pressure)
 			syninfo.min_pressure = lo;
+		quirks_get_uint32(q, QUIRK_ATTR_PALM_PRESSURE_THRESHOLD,
+		    &syninfo.max_pressure);
 	}
 	if (bit_test(abs_bits, ABS_TOOL_WIDTH))
 		synhw.cap_width = true;
