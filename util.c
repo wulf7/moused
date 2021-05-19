@@ -390,7 +390,7 @@ parse_range_property(const char *prop, int *hi, int *lo)
 bool
 parse_evcode_property(const char *prop, struct input_event *events, size_t *nevents)
 {
-	return false;
+	return true;
 }
 
 /*
@@ -399,5 +399,5 @@ parse_evcode_property(const char *prop, struct input_event *events, size_t *neve
 bool
 parse_input_prop_property(const char *prop, unsigned int *props_out, size_t *nprops)
 {
-	return false;
+	return true;
 }

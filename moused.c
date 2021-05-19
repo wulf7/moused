@@ -187,7 +187,7 @@ static int	identify = ID_NONE;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
 static const char *config_file = "moused.conf";
-static const char *quirks_path = ".";
+static const char *quirks_path = NULL;
 static struct quirks_context *quirks;
 
 #define SCROLL_NOTSCROLLING	0
@@ -477,7 +477,7 @@ main(int argc, char *argv[])
     for (i = 0; i < MOUSE_MAXBUTTON; ++i)
 	mstate[i] = &bstate[i];
 
-    while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:cdfghi:m:p:w:z:")) != -1)
+    while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:cdfghi:m:p:q:w:z:")) != -1)
 	switch(c) {
 
 	case '3':
@@ -628,6 +628,14 @@ main(int argc, char *argv[])
 		warnx("invalid argument `%s'", optarg);
 		usage();
 	    }
+	    break;
+
+	case 'q':
+	    config_file = optarg;
+	    break;
+
+	case 'Q':
+	    quirks_path = optarg;
 	    break;
 
 	case 'T':
@@ -1141,7 +1149,7 @@ usage(void)
 	"usage: moused [-cdfg] [-I file]",
 	"              [-VH [-U threshold]] [-a X[,Y]] [-C threshold] [-m N=M] [-w N]",
 	"              [-z N] [-3 [-E timeout]]",
-	"              [-T distance[,time[,after]]] -p <port>",
+	"              [-T distance[,time[,after]]] -p <port> [-q config] [-Q quirks]",
 	"       moused [-d] -i <port|type|model|all> -p <port>");
     exit(1);
 }

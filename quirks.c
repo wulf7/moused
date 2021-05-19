@@ -290,6 +290,10 @@ quirk_get_name(enum quirk q)
 	case QUIRK_ATTR_INPUT_PROP_DISABLE:		return "AttrInputPropDisable";
 	case QUIRK_ATTR_INPUT_PROP_ENABLE:		return "AttrInputPropEnable";
 
+	case MOUSED_GRAB_DEVICE:			return "MousedGrabDevice";
+	case MOUSED_PID_FILE:				return "MousedPidFile";
+	case MOUSED_QUIRKS_DIRECTORY:			return "MousedQuirksDirectory";
+
 	case MOUSED_CHORD_MIDDLE:			return "MousedChordMiddle";
 	case MOUSED_CLICK_THRESHOLD:			return "MousedClickThreshold";
 	case MOUSED_DRIFT_DISTANCE:			return "MousedDriftDistance";
@@ -300,12 +304,10 @@ quirk_get_name(enum quirk q)
 	case MOUSED_EXPONENTIAL_ACCEL:			return "MousedExponentialAccel";
 	case MOUSED_EXPONENTIAL_OFFSET:			return "MousedExponentialOffset";
 	case MOUSED_HSCROLL_ENABLE:			return "MousedHScrollEnable";
-	case MOUSED_GRAB_DEVICE:			return "MousedGrabDevice";
 	case MOUSED_LINEAR_ACCEL_X:			return "MousedLinearAccelX";
 	case MOUSED_LINEAR_ACCEL_Y:			return "MousedLinearAccelY";
 	case MOUSED_LINEAR_ACCEL_Z:			return "MousedLinearAccelZ";
 	case MOUSED_MAP_Z_AXIS:				return "MousedMapZAxis";
-	case MOUSED_PID_FILE:				return "MousedPidFile";
 	case MOUSED_VIRTUAL_SCROLL_ENABLE:		return "MousedVirtualScrollEnable";
 	case MOUSED_VIRTUAL_SCROLL_DISTANCE:		return "MousedVirtualScrollDistance";
 	case MOUSED_WMODE:				return "MousedWMode";
@@ -881,7 +883,29 @@ parse_moused(struct quirks_context *ctx,
 	bool b;
 	double d;
 
-	if (streq(key, quirk_get_name(MOUSED_CHORD_MIDDLE))) {
+	if (streq(key, quirk_get_name(MOUSED_GRAB_DEVICE))) {
+		p->id = MOUSED_GRAB_DEVICE;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_PID_FILE))) {
+		p->id = MOUSED_PID_FILE;
+		p->type = PT_STRING;
+		p->value.s = safe_strdup(value);
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_QUIRKS_DIRECTORY))) {
+		p->id = MOUSED_QUIRKS_DIRECTORY;
+		p->type = PT_STRING;
+		p->value.s = safe_strdup(value);
+		rc = true;
+
+	} else if (streq(key, quirk_get_name(MOUSED_CHORD_MIDDLE))) {
 		p->id = MOUSED_HSCROLL_ENABLE;
 		if (streq(value, "1"))
 			b = true;
@@ -932,7 +956,7 @@ parse_moused(struct quirks_context *ctx,
 		p->value.b = b;
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_EMULATE_THIRD_BUTTON_TIMEOUT))) {
-		p->id = QUIRK_ATTR_THUMB_SIZE_THRESHOLD;
+		p->id = MOUSED_EMULATE_THIRD_BUTTON_TIMEOUT;
 		if (!safe_atou(value, &v))
 			goto out;
 		p->type = PT_UINT;
@@ -954,17 +978,6 @@ parse_moused(struct quirks_context *ctx,
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_HSCROLL_ENABLE))) {
 		p->id = MOUSED_HSCROLL_ENABLE;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
-			goto out;
-		p->type = PT_BOOL;
-		p->value.b = b;
-		rc = true;
-	} else if (streq(key, quirk_get_name(MOUSED_GRAB_DEVICE))) {
-		p->id = MOUSED_GRAB_DEVICE;
 		if (streq(value, "1"))
 			b = true;
 		else if (streq(value, "0"))
@@ -996,7 +1009,6 @@ parse_moused(struct quirks_context *ctx,
 		p->value.d = d;
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_MAP_Z_AXIS))) {
-	} else if (streq(key, quirk_get_name(MOUSED_PID_FILE))) {
 	} else if (streq(key, quirk_get_name(MOUSED_VIRTUAL_SCROLL_ENABLE))) {
 		p->id = MOUSED_VIRTUAL_SCROLL_ENABLE;
 		if (streq(value, "1"))
@@ -1009,6 +1021,12 @@ parse_moused(struct quirks_context *ctx,
 		p->value.b = b;
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_VIRTUAL_SCROLL_DISTANCE))) {
+		p->id = MOUSED_VIRTUAL_SCROLL_DISTANCE;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_WMODE))) {
 		p->id = MOUSED_WMODE;
 		if (streq(value, "1"))
@@ -1097,7 +1115,7 @@ parse_moused(struct quirks_context *ctx,
 		p->value.d = d;
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_TAPHOLD_TIMEOUT))) {
-		p->id = QUIRK_ATTR_THUMB_SIZE_THRESHOLD;
+		p->id = MOUSED_TAPHOLD_TIMEOUT;
 		if (!safe_atou(value, &v))
 			goto out;
 		p->type = PT_UINT;
@@ -1397,6 +1415,8 @@ quirks_init_subsystem(const char *config_file,
 		      enum quirks_log_type log_type)
 {
 	struct quirks_context *ctx = zalloc(sizeof *ctx);
+	struct section *s;
+	struct property *p;
 
 	assert(config_file);
 
@@ -1415,6 +1435,12 @@ quirks_init_subsystem(const char *config_file,
 
 	if (!parse_file(ctx, config_file))
 		goto error;
+
+	if (quirks_path == NULL)
+		list_for_each(s, &ctx->sections, link)
+			list_for_each(p, &s->properties, link)
+				if (p->id == MOUSED_QUIRKS_DIRECTORY)
+					quirks_path = p->value.s;
 
 	if (quirks_path && !parse_files(ctx, quirks_path))
 		goto error;
