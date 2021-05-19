@@ -315,7 +315,6 @@ quirk_get_name(enum quirk q)
 	case MOUSED_TWO_FINGER_SCROLL:			return "MousedTwoFingerScroll";
 	case MOUSED_NATURAL_SCROLL:			return "MousedNaturalScroll";
 	case MOUSED_THREE_FINGER_DRAG:			return "MousedThreeFingerDrag";
-	case MOUSED_MIN_PRESSURE:			return "MousedMinPressure";
 	case MOUSED_MAX_PRESSURE:			return "MousedMaxPressure";
 	case MOUSED_MAX_WIDTH:				return "MousedMaxWidth";
 	case MOUSED_TAP_TIMEOUT:			return "MousedTapTimeout";
@@ -1071,13 +1070,6 @@ parse_moused(struct quirks_context *ctx,
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
-		rc = true;
-	} else if (streq(key, quirk_get_name(MOUSED_MIN_PRESSURE))) {
-		p->id = MOUSED_MIN_PRESSURE;
-		if (!safe_atou(value, &v))
-			goto out;
-		p->type = PT_UINT;
-		p->value.u = v;
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_MAX_PRESSURE))) {
 		p->id = MOUSED_MAX_PRESSURE;

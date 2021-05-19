@@ -1288,7 +1288,10 @@ r_init(void)
 	bitstr_t bit_decl(rel_bits, REL_CNT); /* Evdev capabilities */
 	bitstr_t bit_decl(abs_bits, ABS_CNT); /* */
 	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
+	struct quirks *q = rodent.quirks;
+	struct quirk_range r;
 	int sz_x, sz_y;
+	int hi, lo;
 
 	if (rodent.dev.type != DEVICE_TYPE_TOUCHPAD)
 		return;
@@ -1312,8 +1315,32 @@ r_init(void)
 	}
 	if (bit_test(key_bits, BTN_TOUCH))
 		synhw.cap_touch = true;
-	if (bit_test(abs_bits, ABS_PRESSURE))
+	/* XXX: libinput uses ABS_MT_PRESSURE where available */
+	if (bit_test(abs_bits, ABS_PRESSURE) &&
+	    ioctl(rodent.mfd, EVIOCGABS(ABS_PRESSURE), &ai) >= 0) {
 		synhw.cap_pressure = true;
+		if (quirks_get_range(q, QUIRK_ATTR_PRESSURE_RANGE, &r)) {
+			hi = r.upper;
+			lo = r.lower;
+			if (hi == 0 && lo == 0) {
+				debug("pressure-based touch detection disabled");
+				synhw.cap_pressure = false;
+			}
+		} else {
+			u_int range = ai.maximum - ai.minimum;
+			/* Approximately the synaptics defaults */
+			hi = ai.minimum + 0.12 * range;
+			lo = ai.minimum + 0.10 * range;
+		}
+		if (hi > ai.maximum || hi < ai.minimum ||
+		    lo > ai.maximum || lo < ai.minimum) {
+			debug("discarding out-of-bounds pressure range %d:%d",
+			hi, lo);
+			synhw.cap_pressure = false;
+		}
+		if (synhw.cap_pressure)
+			syninfo.min_pressure = lo;
+	}
 	if (bit_test(abs_bits, ABS_TOOL_WIDTH))
 		synhw.cap_width = true;
 	if (bit_test(abs_bits, ABS_MT_SLOT) &&
