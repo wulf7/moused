@@ -240,7 +240,7 @@ static struct tpinfo {
 	int	margin_bottom;		/* Bottom margin */
 	int	margin_left;		/* Left margin */
 	int	tap_timeout;		/* */
-	int	tap_threshold;		/* Minimum pressure to detect a tap */
+	u_int	tap_threshold;		/* Minimum pressure to detect a tap */
 	double	tap_max_delta;		/* Length of segments above which a tap is ignored */
 	int	taphold_timeout;	/* Maximum elapsed time between two taps to consider a tap-hold action */
 	double	vscroll_ver_area;	/* Area reserved for vertical virtual scrolling */
@@ -257,7 +257,7 @@ static struct tpinfo {
 	.max_pressure = 130,
 	.max_width = 16,
 	.tap_timeout = 100,		/* ms */
-	.tap_threshold = 20,
+	.tap_threshold = 0,
 	.tap_max_delta = 2.0,		/* mm */
 	.taphold_timeout = 200,		/* ms */
 	.vscroll_min_delta = 1.25,	/* mm */
@@ -1322,6 +1322,7 @@ r_init(void)
 		if (quirks_get_range(q, QUIRK_ATTR_PRESSURE_RANGE, &r)) {
 			hi = r.upper;
 			lo = r.lower;
+			syninfo.tap_threshold = r.upper;
 			if (hi == 0 && lo == 0) {
 				debug("pressure-based touch detection disabled");
 				synhw.cap_pressure = false;
@@ -1331,6 +1332,7 @@ r_init(void)
 			/* Approximately the synaptics defaults */
 			hi = ai.minimum + 0.12 * range;
 			lo = ai.minimum + 0.10 * range;
+			syninfo.tap_threshold = ai.minimum + 0.17 * range;
 		}
 		if (hi > ai.maximum || hi < ai.minimum ||
 		    lo > ai.maximum || lo < ai.minimum) {
@@ -1342,6 +1344,8 @@ r_init(void)
 			syninfo.min_pressure = lo;
 		quirks_get_uint32(q, QUIRK_ATTR_PALM_PRESSURE_THRESHOLD,
 		    &syninfo.max_pressure);
+		quirks_get_uint32(q, MOUSED_TAP_PRESSURE_THRESHOLD,
+		    &syninfo.tap_threshold);
 	}
 	/* XXX: libinput uses ABS_MT_TOUCH_MAJOR where available */
 	if (bit_test(abs_bits, ABS_TOOL_WIDTH) &&

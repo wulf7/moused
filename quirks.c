@@ -316,7 +316,7 @@ quirk_get_name(enum quirk q)
 	case MOUSED_NATURAL_SCROLL:			return "MousedNaturalScroll";
 	case MOUSED_THREE_FINGER_DRAG:			return "MousedThreeFingerDrag";
 	case MOUSED_TAP_TIMEOUT:			return "MousedTapTimeout";
-	case MOUSED_TAP_THRESHOLD:			return "MousedTapThreshold";
+	case MOUSED_TAP_PRESSURE_THRESHOLD:		return "MousedTapPressureThreshold";
 	case MOUSED_TAP_MAX_DELTA:			return "MousedTapMaxDelta";
 	case MOUSED_TAPHOLD_TIMEOUT:			return "MousedTapholdTimeout";
 	case MOUSED_VSCROLL_MIN_DELTA:			return "MousedVScrollMinDelta";
@@ -1076,8 +1076,8 @@ parse_moused(struct quirks_context *ctx,
 		p->type = PT_UINT;
 		p->value.u = v;
 		rc = true;
-	} else if (streq(key, quirk_get_name(MOUSED_TAP_THRESHOLD))) {
-		p->id = MOUSED_TAP_THRESHOLD;
+	} else if (streq(key, quirk_get_name(MOUSED_TAP_PRESSURE_THRESHOLD))) {
+		p->id = MOUSED_TAP_PRESSURE_THRESHOLD;
 		if (!safe_atou(value, &v))
 			goto out;
 		p->type = PT_UINT;
