@@ -1290,6 +1290,7 @@ r_init(void)
 	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
 	struct quirks *q = rodent.quirks;
 	struct quirk_range r;
+	struct quirk_dimensions dim;
 	int sz_x, sz_y;
 	int hi, lo;
 
@@ -1312,6 +1313,14 @@ r_init(void)
 		sz_y = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
 		synhw.res_y = ai.resolution == 0 ?
 		    DFLT_TPAD_RESOLUTION : ai.resolution;
+	}
+	if (quirks_get_dimensions(q, QUIRK_ATTR_RESOLUTION_HINT, &dim)) {
+		synhw.res_x = dim.x;
+		synhw.res_y = dim.y;
+	} else if (synhw.max_x != INT_MAX && synhw.max_y != INT_MAX &&
+		   quirks_get_dimensions(q, QUIRK_ATTR_SIZE_HINT, &dim)) {
+		synhw.res_x = (synhw.max_x - synhw.min_x) / dim.x;
+		synhw.res_y = (synhw.max_y - synhw.min_y) / dim.y;
 	}
 	if (bit_test(key_bits, BTN_TOUCH))
 		synhw.cap_touch = true;
