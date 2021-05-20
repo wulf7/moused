@@ -256,13 +256,13 @@ static struct tpinfo {
 	.min_pressure = 1,
 	.max_pressure = 130,
 	.max_width = 16,
-	.tap_timeout = 100,		/* ms */
+	.tap_timeout = 180,		/* ms */
 	.tap_threshold = 0,
-	.tap_max_delta = 2.0,		/* mm */
-	.taphold_timeout = 200,		/* ms */
+	.tap_max_delta = 1.3,		/* mm */
+	.taphold_timeout = 300,		/* ms */
 	.vscroll_min_delta = 1.25,	/* mm */
-	.vscroll_hor_area = -15.0,	/* mm */
-	.vscroll_ver_area = 0.0,	/* mm */
+	.vscroll_hor_area = 0.0,	/* mm */
+	.vscroll_ver_area = -15.0,	/* mm */
 };
 
 static struct gesture_state {
