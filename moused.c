@@ -1281,12 +1281,11 @@ r_name(int type)
 }
 
 static void
-r_init(void)
+r_init_touchpad(void)
 {
 	struct input_absinfo ai;
-	bitstr_t bit_decl(key_bits, KEY_CNT); /* */
-	bitstr_t bit_decl(rel_bits, REL_CNT); /* Evdev capabilities */
-	bitstr_t bit_decl(abs_bits, ABS_CNT); /* */
+	bitstr_t bit_decl(key_bits, KEY_CNT);
+	bitstr_t bit_decl(abs_bits, ABS_CNT);
 	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
 	struct quirks *q = rodent.quirks;
 	struct quirk_range r;
@@ -1295,9 +1294,6 @@ r_init(void)
 	u_int u;
 	int sz_x, sz_y;
 	int hi, lo;
-
-	if (rodent.dev.type != DEVICE_TYPE_TOUCHPAD)
-		return;
 
 	quirks_get_bool(q, MOUSED_TWO_FINGER_SCROLL, &syninfo.two_finger_scroll);
 	quirks_get_bool(q, MOUSED_NATURAL_SCROLL, &syninfo.natural_scroll);
@@ -1403,8 +1399,19 @@ r_init(void)
 	rodent.accely /= synhw.res_y;
 	rodent.accelz *= DFLT_MOUSE_RESOLUTION;
 	rodent.accelz /= (synhw.res_x * DFLT_LINEHEIGHT);
+}
 
+static void
+r_init(void)
+{
+	switch (rodent.dev.type) {
+	case DEVICE_TYPE_TOUCHPAD:
+		r_init_touchpad();
+		break;
+	default:
 //		debug("unsupported evdev type: %s", r_name(rodent.dev.type));
+		break;
+	}
 }
 
 static int
