@@ -1153,8 +1153,15 @@ static void
 log_or_warn_va(int log_pri, int errnum, const char *fmt, va_list ap)
 {
 	char buf[256];
+	size_t len;
 
 	vsnprintf(buf, sizeof(buf), fmt, ap);
+
+	/* Strip trailing line-feed appended by quirk subsystem */
+	len = strlen(buf);
+	if (len != 0 && buf[len - 1] == '\n')
+		buf[len - 1] = '\0';
+
 	if (errnum) {
 		strlcat(buf, ": ", sizeof(buf));
 		strlcat(buf, strerror(errnum), sizeof(buf));
