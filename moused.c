@@ -239,10 +239,10 @@ static struct tpinfo {
 	int	margin_right;		/* Right margin */
 	int	margin_bottom;		/* Bottom margin */
 	int	margin_left;		/* Left margin */
-	int	tap_timeout;		/* */
+	u_int	tap_timeout;		/* */
 	u_int	tap_threshold;		/* Minimum pressure to detect a tap */
 	double	tap_max_delta;		/* Length of segments above which a tap is ignored */
-	int	taphold_timeout;	/* Maximum elapsed time between two taps to consider a tap-hold action */
+	u_int	taphold_timeout;	/* Maximum elapsed time between two taps to consider a tap-hold action */
 	double	vscroll_ver_area;	/* Area reserved for vertical virtual scrolling */
 	double	vscroll_hor_area;	/* Area reserved for horizontal virtual scrolling */
 	double	vscroll_min_delta;	/* Minimum movement to consider virtual scrolling */
@@ -1296,6 +1296,16 @@ r_init(void)
 
 	if (rodent.dev.type != DEVICE_TYPE_TOUCHPAD)
 		return;
+
+	quirks_get_bool(q, MOUSED_TWO_FINGER_SCROLL, &syninfo.two_finger_scroll);
+	quirks_get_bool(q, MOUSED_NATURAL_SCROLL, &syninfo.natural_scroll);
+	quirks_get_bool(q, MOUSED_THREE_FINGER_DRAG, &syninfo.three_finger_drag);
+	quirks_get_uint32(q, MOUSED_TAP_TIMEOUT, &syninfo.tap_timeout);
+	quirks_get_double(q, MOUSED_TAP_MAX_DELTA, &syninfo.tap_max_delta);
+	quirks_get_uint32(q, MOUSED_TAPHOLD_TIMEOUT, &syninfo.taphold_timeout);
+	quirks_get_double(q, MOUSED_VSCROLL_MIN_DELTA, &syninfo.vscroll_min_delta);
+	quirks_get_double(q, MOUSED_VSCROLL_HOR_AREA, &syninfo.vscroll_hor_area);
+	quirks_get_double(q, MOUSED_VSCROLL_VER_AREA, &syninfo.vscroll_ver_area);
 
 	ioctl(rodent.mfd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits);
 	ioctl(rodent.mfd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits);
