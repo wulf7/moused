@@ -315,6 +315,9 @@ quirk_get_name(enum quirk q)
 	case MOUSED_TWO_FINGER_SCROLL:			return "MousedTwoFingerScroll";
 	case MOUSED_NATURAL_SCROLL:			return "MousedNaturalScroll";
 	case MOUSED_THREE_FINGER_DRAG:			return "MousedThreeFingerDrag";
+	case MOUSED_SOFTBUTTON2_X:			return "MousedSoftButton2X";
+	case MOUSED_SOFTBUTTON3_X:			return "MousedSoftButton3X";
+	case MOUSED_SOFTBUTTONS_Y:			return "MousedSoftButtonsY";
 	case MOUSED_TAP_TIMEOUT:			return "MousedTapTimeout";
 	case MOUSED_TAP_PRESSURE_THRESHOLD:		return "MousedTapPressureThreshold";
 	case MOUSED_TAP_MAX_DELTA:			return "MousedTapMaxDelta";
@@ -322,6 +325,7 @@ quirk_get_name(enum quirk q)
 	case MOUSED_VSCROLL_MIN_DELTA:			return "MousedVScrollMinDelta";
 	case MOUSED_VSCROLL_HOR_AREA:			return "MousedVScrollHorArea";
 	case MOUSED_VSCROLL_VER_AREA:			return "MousedVScrollVerArea";
+
 
 	default:
 		abort();
@@ -877,6 +881,7 @@ parse_moused(struct quirks_context *ctx,
 	struct quirk_dimensions dim;
 	struct quirk_range range;
 	unsigned int v;
+	int i;
 	bool b;
 	double d;
 
@@ -1068,6 +1073,27 @@ parse_moused(struct quirks_context *ctx,
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_SOFTBUTTON2_X))) {
+		p->id = MOUSED_SOFTBUTTON2_X;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_SOFTBUTTON3_X))) {
+		p->id = MOUSED_SOFTBUTTON3_X;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_SOFTBUTTONS_Y))) {
+		p->id = MOUSED_SOFTBUTTONS_Y;
+		if (!safe_atoi(value, &i))
+			goto out;
+		p->type = PT_INT;
+		p->value.i = i;
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_TAP_TIMEOUT))) {
 		p->id = MOUSED_TAP_TIMEOUT;

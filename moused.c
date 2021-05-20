@@ -1291,6 +1291,8 @@ r_init(void)
 	struct quirks *q = rodent.quirks;
 	struct quirk_range r;
 	struct quirk_dimensions dim;
+	int i;
+	u_int u;
 	int sz_x, sz_y;
 	int hi, lo;
 
@@ -1382,11 +1384,17 @@ r_init(void)
 	}
 	/* Set bottom quarter as 42% - 16% - 42% sized softbuttons */
 	if (synhw.is_clickpad) {
-		syninfo.softbuttons_y = sz_y / 4;
+		i = 25;
+		quirks_get_int32(q, MOUSED_SOFTBUTTONS_Y, &i);
+		syninfo.softbuttons_y = sz_y * i / 100;
 		if (bit_test(prop_bits, INPUT_PROP_TOPBUTTONPAD))
 			syninfo.softbuttons_y = -syninfo.softbuttons_y;
-		syninfo.softbutton2_x = sz_x * 11 / 25;
-		syninfo.softbutton3_x = sz_x * 14 / 25;
+		u = 42;
+		quirks_get_uint32(q, MOUSED_SOFTBUTTON2_X, &u);
+		syninfo.softbutton2_x = sz_x * u / 100;
+		u = 58;
+		quirks_get_uint32(q, MOUSED_SOFTBUTTON3_X, &u);
+		syninfo.softbutton3_x = sz_x * u / 100;
 	}
 	/* Normalize pointer movement to match 200dpi mouse */
 	rodent.accelx *= DFLT_MOUSE_RESOLUTION;
