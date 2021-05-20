@@ -315,6 +315,26 @@ static struct evdev_state {
 	struct finger	mt[MAX_FINGERS];
 } ev;
 
+struct drift_xy {
+	int x;
+	int y;
+};
+struct drift {
+	u_int		distance;	/* max steps X+Y */
+	u_int		time;		/* ms */
+	struct timespec	time_ts;
+	struct timespec	twotime_ts;	/* 2*drift_time */
+	u_int		after;		/* ms */
+	struct timespec	after_ts;
+	bool		terminate;
+	struct timespec	current_ts;
+	struct timespec	tmp;
+	struct timespec	last_activity;
+	struct timespec	since;
+	struct drift_xy	last;		/* steps in last drift_time */
+	struct drift_xy	previous;	/* steps in prev. drift_time */
+};
+
 static struct rodentparam {
     int flags;
     struct device dev;		/* Device */
@@ -335,6 +355,7 @@ static struct rodentparam {
     double remainz;		/*    ... for rounding errors. */
     int scrollthreshold;	/* Movement distance before virtual scrolling */
     int scrollspeed;		/* Movement distance to rate of scrolling */
+    struct drift drift;
 } rodent = {
     .flags = 0,
     .dev.path = NULL,
@@ -416,26 +437,6 @@ static struct timespec	mouse_button_state_ts;
 static int		mouse_move_delayed;
 
 static jmp_buf env;
-
-struct drift_xy {
-    int x;
-    int y;
-};
-static struct drift {
-	u_int		distance;	/* max steps X+Y */
-	u_int		time;		/* ms */
-	struct timespec	time_ts;
-	struct timespec	twotime_ts;	/* 2*drift_time */
-	u_int		after;		/* ms */
-	struct timespec	after_ts;
-	bool		terminate;
-	struct timespec	current_ts;
-	struct timespec	tmp;
-	struct timespec	last_activity;
-	struct timespec	since;
-	struct drift_xy	last;		/* steps in last drift_time */
-	struct drift_xy	previous;	/* steps in prev. drift_time */
-} drift;
 
 /* function prototypes */
 
@@ -1069,12 +1070,13 @@ moused(void)
 		}
 	    }
 
-		if (drift.terminate) {
+		if (rodent.drift.terminate) {
 			if ((flags & MOUSE_POSCHANGED) == 0 ||
 			    action.dz || action2.dz)
-				drift.last_activity = drift.current_ts;
+				rodent.drift.last_activity =
+				    rodent.drift.current_ts;
 			else {
-				if (r_drift (&drift, &action2))
+				if (r_drift (&rodent.drift, &action2))
 					continue;
 			}
 		}
@@ -1403,13 +1405,13 @@ static void
 r_init_drift(void)
 {
 	struct quirks *q = rodent.quirks;
-	struct drift *d = &drift;
+	struct drift *d = &rodent.drift;
 
 	if (opt_drift_terminate) {
 		d->terminate = true;
 		d->distance = opt_drift_distance;
 		d->time = opt_drift_time;
-		drift.after = opt_drift_after;
+		d->after = opt_drift_after;
 	} else if (quirks_get_bool(q, MOUSED_DRIFT_TERMINATE, &d->terminate) &&
 		   d->terminate) {
 		quirks_get_uint32(q, MOUSED_DRIFT_DISTANCE, &d->distance);
@@ -1903,7 +1905,7 @@ r_timestamp(mousestatus_t *act)
 #endif
 
     clock_gettime(CLOCK_MONOTONIC_FAST, &ts1);
-    drift.current_ts = ts1;
+    rodent.drift.current_ts = ts1;
 
     /* double click threshold */
     ts2.tv_sec = rodent.clickthreshold / 1000;
