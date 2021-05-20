@@ -234,7 +234,7 @@ static struct tpinfo {
 	bool	three_finger_drag;	/* Enable dragging with three fingers */
 	u_int	min_pressure;		/* Min pressure to start an action */
 	u_int	max_pressure;		/* Maximum pressure to detect palm */
-	int	max_width;		/* Max finger width to detect palm */
+	u_int	max_width;		/* Max finger width to detect palm */
 	int	margin_top;		/* Top margin */
 	int	margin_right;		/* Right margin */
 	int	margin_bottom;		/* Bottom margin */
@@ -1343,7 +1343,10 @@ r_init(void)
 		quirks_get_uint32(q, QUIRK_ATTR_PALM_PRESSURE_THRESHOLD,
 		    &syninfo.max_pressure);
 	}
-	if (bit_test(abs_bits, ABS_TOOL_WIDTH))
+	/* XXX: libinput uses ABS_MT_TOUCH_MAJOR where available */
+	if (bit_test(abs_bits, ABS_TOOL_WIDTH) &&
+	    quirks_get_uint32(q, QUIRK_ATTR_PALM_SIZE_THRESHOLD,
+	     &syninfo.max_width) && syninfo.max_width != 0)
 		synhw.cap_width = true;
 	if (bit_test(abs_bits, ABS_MT_SLOT) &&
 	    bit_test(abs_bits, ABS_MT_TRACKING_ID) &&
@@ -1964,9 +1967,9 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		min_y = synhw.min_y;
 
 		/* Palm detection. */
-		if (!(
-		    (nfingers != 1) || (synhw.cap_width && w <= max_width) ||
-		    (!synhw.cap_width && z <= max_pressure))) {
+		if (nfingers == 1 &&
+		    ((synhw.cap_width && w > max_width) ||
+		     (synhw.cap_pressure && z > max_pressure))) {
 			/*
 			 * We consider the packet irrelevant for the current
 			 * action when:
@@ -1978,7 +1981,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 			 *
 			 *  Note that this doesn't terminate the current action.
 			 */
-			debug("palm detected! (%d)\n", w);
+			debug("palm detected! (%d)", z);
 			return(GEST_IGNORE);
 		}
 
