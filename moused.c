@@ -190,6 +190,12 @@ static const char *config_file = "moused.conf";
 static const char *quirks_path = NULL;
 static struct quirks_context *quirks;
 
+static bool	opt_drift_terminate = false;
+static u_int	opt_drift_distance = 4;		/* max steps X+Y */
+static u_int	opt_drift_time = 500;		/* ms */
+static u_int	opt_drift_after = 4000;		/* ms */
+
+
 #define SCROLL_NOTSCROLLING	0
 #define SCROLL_PREPARE		1
 #define SCROLL_SCROLLING	2
@@ -416,11 +422,11 @@ struct drift_xy {
     int y;
 };
 static struct drift {
-	int		distance;	/* max steps X+Y */
-	int		time;		/* ms */
+	u_int		distance;	/* max steps X+Y */
+	u_int		time;		/* ms */
 	struct timespec	time_ts;
 	struct timespec	twotime_ts;	/* 2*drift_time */
-	int		after;		/* ms */
+	u_int		after;		/* ms */
 	struct timespec	after_ts;
 	bool		terminate;
 	struct timespec	current_ts;
@@ -429,16 +435,7 @@ static struct drift {
 	struct timespec	since;
 	struct drift_xy	last;		/* steps in last drift_time */
 	struct drift_xy	previous;	/* steps in prev. drift_time */
-} drift = {
-	.distance = 4,
-	.time = 500,			/* in 0.5 sec */
-	.after = 4000,			/* 4 sec */
-	.terminate = false,
-	.last_activity = {0, 0},
-	.since = {0, 0},
-	.last = {0, 0},
-	.previous = {0, 0},
-};
+} drift;
 
 /* function prototypes */
 
@@ -639,22 +636,16 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'T':
-	    drift.terminate = true;
-	    sscanf(optarg, "%d,%d,%d", &drift.distance, &drift.time,
-		&drift.after);
-	    if (drift.distance <= 0 || drift.time <= 0 || drift.after <= 0) {
-		warnx("invalid argument `%s'", optarg);
-		usage();
-	    }
-	    debug("terminate drift: distance %d, time %d, after %d",
-		drift.distance, drift.time, drift.after);
-	    drift.time_ts.tv_sec = drift.time / 1000;
-	    drift.time_ts.tv_nsec = (drift.time % 1000) * 1000000;
- 	    drift.twotime_ts.tv_sec = (drift.time *= 2) / 1000;
-	    drift.twotime_ts.tv_nsec = (drift.time % 1000) * 1000000;
-	    drift.after_ts.tv_sec = drift.after / 1000;
-	    drift.after_ts.tv_nsec = (drift.after % 1000) * 1000000;
-	    break;
+			opt_drift_terminate = true;
+			sscanf(optarg, "%u,%u,%u", &opt_drift_distance,
+			    &opt_drift_time, &opt_drift_after);
+			if (opt_drift_distance == 0 ||
+			    opt_drift_time == 0 ||
+			    opt_drift_after == 0) {
+				warnx("invalid argument `%s'", optarg);
+				usage();
+			}
+			break;
 
 	case 'V':
 	    rodent.flags |= VirtualScroll;
@@ -1402,12 +1393,52 @@ r_init_touchpad(void)
 }
 
 static void
+r_init_drift(void)
+{
+	struct quirks *q = rodent.quirks;
+	struct drift *d = &drift;
+
+	if (opt_drift_terminate) {
+		d->terminate = true;
+		d->distance = opt_drift_distance;
+		d->time = opt_drift_time;
+		drift.after = opt_drift_after;
+	} else if (quirks_get_bool(q, MOUSED_DRIFT_TERMINATE, &d->terminate) &&
+		   d->terminate) {
+		quirks_get_uint32(q, MOUSED_DRIFT_DISTANCE, &d->distance);
+		quirks_get_uint32(q, MOUSED_DRIFT_TIME, &d->time);
+		quirks_get_uint32(q, MOUSED_DRIFT_AFTER, &d->after);
+	} else
+		return;
+
+	if (d->distance == 0 || d->time == 0 || d->after == 0) {
+		warnx("invalid drift parameter");
+		exit(1);
+	}
+
+	debug("terminate drift: distance %d, time %d, after %d",
+	    d->distance, d->time, d->after);
+
+	d->time_ts.tv_sec = d->time / 1000;
+	d->time_ts.tv_nsec = (d->time % 1000) * 1000000;
+	d->twotime_ts.tv_sec = (d->time *= 2) / 1000;
+	d->twotime_ts.tv_nsec = (d->time % 1000) * 1000000;
+	d->after_ts.tv_sec = d->after / 1000;
+	d->after_ts.tv_nsec = (d->after % 1000) * 1000000;
+}
+
+static void
 r_init(void)
 {
 	switch (rodent.dev.type) {
 	case DEVICE_TYPE_TOUCHPAD:
 		r_init_touchpad();
 		break;
+
+	case DEVICE_TYPE_MOUSE:
+		r_init_drift();
+		break;
+
 	default:
 //		debug("unsupported evdev type: %s", r_name(rodent.dev.type));
 		break;

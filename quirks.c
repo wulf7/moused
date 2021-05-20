@@ -296,6 +296,7 @@ quirk_get_name(enum quirk q)
 
 	case MOUSED_CHORD_MIDDLE:			return "MousedChordMiddle";
 	case MOUSED_CLICK_THRESHOLD:			return "MousedClickThreshold";
+	case MOUSED_DRIFT_TERMINATE:			return "MousedDriftTerminate";
 	case MOUSED_DRIFT_DISTANCE:			return "MousedDriftDistance";
 	case MOUSED_DRIFT_TIME:				return "MousedDriftTime";
 	case MOUSED_DRIFT_AFTER:			return "MousedDriftAfter";
@@ -924,6 +925,17 @@ parse_moused(struct quirks_context *ctx,
 			goto out;
 		p->type = PT_UINT;
 		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_DRIFT_TERMINATE))) {
+		p->id = MOUSED_DRIFT_TERMINATE;
+		if (streq(value, "1"))
+			b = true;
+		else if (streq(value, "0"))
+			b = false;
+		else
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_DRIFT_DISTANCE))) {
 		p->id = MOUSED_DRIFT_DISTANCE;
