@@ -195,6 +195,11 @@ static u_int	opt_drift_distance = 4;		/* max steps X+Y */
 static u_int	opt_drift_time = 500;		/* ms */
 static u_int	opt_drift_after = 4000;		/* ms */
 
+static double	opt_accelx = 1.0;
+static double	opt_accely = 1.0;
+static bool	opt_exp_accel = false;
+static double	opt_expoaccel = 1.0;
+static double	opt_expoffset = 1.0;
 
 #define SCROLL_NOTSCROLLING	0
 #define SCROLL_PREPARE		1
@@ -367,14 +372,6 @@ static struct rodentparam {
     .cfd = -1,
     .clickthreshold = DFLT_CLICKTHRESHOLD,
     .button2timeout = DFLT_BUTTON2TIMEOUT,
-    .accelx = 1.0,
-    .accely = 1.0,
-    .accelz = 1.0,
-    .expoaccel = 1.0,
-    .expoffset = 1.0,
-    .remainx = 0.0,
-    .remainy = 0.0,
-    .remainz = 0.0,
     .scrollthreshold = DFLT_SCROLLTHRESHOLD,
     .scrollspeed = DFLT_SCROLLSPEED,
 };
@@ -492,30 +489,28 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'a':
-	    i = sscanf(optarg, "%lf,%lf,%lf",
-	        &rodent.accelx, &rodent.accely, &rodent.accelz);
-	    if (i == 0) {
-		warnx("invalid linear acceleration argument '%s'", optarg);
-		usage();
-	    }
-
-	    if (i == 1)
-		rodent.accely = rodent.accelx;
-
-	    break;
+			i = sscanf(optarg, "%lf,%lf", &opt_accelx, &opt_accely);
+			if (i == 0) {
+				warnx("invalid linear acceleration argument "
+				    "'%s'", optarg);
+				usage();
+			}
+			if (i == 1)
+				opt_accely = opt_accelx;
+			break;
 
 	case 'A':
-	    rodent.flags |= ExponentialAcc;
-	    i = sscanf(optarg, "%lf,%lf", &rodent.expoaccel, &rodent.expoffset);
-	    if (i == 0) {
-		warnx("invalid exponential acceleration argument '%s'", optarg);
-		usage();
-	    }
-
-	    if (i == 1)
-		rodent.expoffset = 1.0;
-
-	    break;
+			opt_exp_accel = true;
+			i = sscanf(optarg, "%lf,%lf", &opt_expoaccel,
+			    &opt_expoffset);
+			if (i == 0) {
+				warnx("invalid exponential acceleration "
+				    "argument '%s'", optarg);
+				usage();
+			}
+			if (i == 1)
+				opt_expoffset = 1.0;
+			break;
 
 	case 'c':
 	    rodent.flags |= ChordMiddle;
@@ -780,21 +775,21 @@ out:
 static void
 linacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 {
-    double fdx, fdy, fdz;
+	double fdx, fdy, fdz;
 
-    if (dx == 0 && dy == 0 && dz == 0) {
-	*movex = *movey = *movez = 0;
-	return;
-    }
-    fdx = dx * rodent.accelx + rodent.remainx;
-    fdy = dy * rodent.accely + rodent.remainy;
-    fdz = dz * rodent.accelz + rodent.remainz;
-    *movex = lround(fdx);
-    *movey = lround(fdy);
-    *movez = lround(fdz);
-    rodent.remainx = fdx - *movex;
-    rodent.remainy = fdy - *movey;
-    rodent.remainz = fdz - *movez;
+	if (dx == 0 && dy == 0 && dz == 0) {
+		*movex = *movey = *movez = 0;
+		return;
+	}
+	fdx = dx * rodent.accelx + rodent.remainx;
+	fdy = dy * rodent.accely + rodent.remainy;
+	fdz = dz * rodent.accelz + rodent.remainz;
+	*movex = lround(fdx);
+	*movey = lround(fdy);
+	*movez = lround(fdz);
+	rodent.remainx = fdx - *movex;
+	rodent.remainy = fdy - *movey;
+	rodent.remainz = fdz - *movez;
 }
 
 /*
@@ -809,31 +804,31 @@ linacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 static void
 expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 {
-    static double lastlength[3] = {0.0, 0.0, 0.0};
-    double fdx, fdy, fdz, length, lbase, accel;
+	static double lastlength[3] = {0.0, 0.0, 0.0};
+	double fdx, fdy, fdz, length, lbase, accel;
 
-    if (dx == 0 && dy == 0 && dz == 0) {
-	*movex = *movey = *movez = 0;
-	return;
-    }
-    fdx = dx * rodent.accelx;
-    fdy = dy * rodent.accely;
-    fdz = dz * rodent.accelz;
-    length = sqrtf((fdx * fdx) + (fdy * fdy));		/* Pythagoras */
-    length = (length + lastlength[0] + lastlength[1] + lastlength[2]) / 4;
-    lbase = length / rodent.expoffset;
-    accel = powf(lbase, rodent.expoaccel) / lbase;
-    fdx = fdx * accel + rodent.remainx;
-    fdy = fdy * accel + rodent.remainy;
-    *movex = lroundf(fdx);
-    *movey = lroundf(fdy);
-    *movez = lround(fdz);
-    rodent.remainx = fdx - *movex;
-    rodent.remainy = fdy - *movey;
-    rodent.remainz = fdz - *movez;
-    lastlength[2] = lastlength[1];
-    lastlength[1] = lastlength[0];
-    lastlength[0] = length;	/* Insert new average, not original length! */
+	if (dx == 0 && dy == 0 && dz == 0) {
+		*movex = *movey = *movez = 0;
+		return;
+	}
+	fdx = dx * rodent.accelx;
+	fdy = dy * rodent.accely;
+	fdz = dz * rodent.accelz;
+	length = sqrt((fdx * fdx) + (fdy * fdy));	/* Pythagoras */
+	length = (length + lastlength[0] + lastlength[1] + lastlength[2]) / 4;
+	lbase = length / rodent.expoffset;
+	accel = pow(lbase, rodent.expoaccel) / lbase;
+	fdx = fdx * accel + rodent.remainx;
+	fdy = fdy * accel + rodent.remainy;
+	*movex = lround(fdx);
+	*movey = lround(fdy);
+	*movez = lround(fdz);
+	rodent.remainx = fdx - *movex;
+	rodent.remainy = fdy - *movey;
+	rodent.remainz = fdz - *movez;
+	lastlength[2] = lastlength[1];
+	lastlength[1] = lastlength[0];
+	lastlength[0] = length;	/* Insert new average, not original length! */
 }
 
 static void
@@ -1437,14 +1432,43 @@ r_init_drift(void)
 }
 
 static void
+r_init_accel(void)
+{
+	struct quirks *q = rodent.quirks;
+	bool r1, r2;
+
+	rodent.accelx = opt_accelx;
+	if (opt_accelx == 1.0)
+		 quirks_get_double(q, MOUSED_LINEAR_ACCEL_X, &rodent.accelx);
+	rodent.accely = opt_accely;
+	if (opt_accely == 1.0)
+		 quirks_get_double(q, MOUSED_LINEAR_ACCEL_Y, &rodent.accely);
+	if (!quirks_get_double(q, MOUSED_LINEAR_ACCEL_Z, &rodent.accelz))
+		rodent.accelz = 1.0;
+	if (opt_exp_accel) {
+		rodent.flags |= ExponentialAcc;
+		rodent.expoaccel = opt_expoaccel;
+		rodent.expoffset = opt_expoffset;
+		return;
+	}
+	rodent.expoaccel = rodent.expoffset = 1.0;
+	r1 = quirks_get_double(q, MOUSED_EXPONENTIAL_ACCEL, &rodent.expoaccel);
+	r2 = quirks_get_double(q, MOUSED_EXPONENTIAL_OFFSET, &rodent.expoffset);
+	if (r1 || r2)
+		rodent.flags |= ExponentialAcc;
+}
+
+static void
 r_init(void)
 {
 	switch (rodent.dev.type) {
 	case DEVICE_TYPE_TOUCHPAD:
+		r_init_accel();
 		r_init_touchpad();
 		break;
 
 	case DEVICE_TYPE_MOUSE:
+		r_init_accel();
 		r_init_drift();
 		break;
 
