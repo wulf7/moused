@@ -1152,6 +1152,9 @@ log_or_warn_va(int log_pri, int errnum, const char *fmt, va_list ap)
 	char buf[256];
 	size_t len;
 
+	if (debug == 0 && log_pri > LOG_ERR)
+		return;
+
 	vsnprintf(buf, sizeof(buf), fmt, ap);
 
 	/* Strip trailing line-feed appended by quirk subsystem */
