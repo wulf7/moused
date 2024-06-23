@@ -107,8 +107,9 @@ enum match_flags {
 	M_UDEV_TYPE	= bit(5),
 	M_DT		= bit(6),
 	M_VERSION	= bit(7),
+	M_UNIQ          = bit(8),
 
-	M_LAST		= M_VERSION,
+	M_LAST		= M_UNIQ,
 };
 
 enum bustype {
@@ -141,6 +142,7 @@ struct match {
 	uint32_t bits;
 
 	char *name;
+	char *uniq;
 	enum bustype bus;
 	uint32_t vendor;
 	uint32_t product;
@@ -179,6 +181,10 @@ struct quirks {
 	/* These are not ref'd, just a collection of pointers */
 	struct property **properties;
 	size_t nproperties;
+
+	/* Special properties for AttrEventCode and AttrInputCode, these are
+	 * owned by us, not the section */
+	struct list floating_properties;
 };
 
 /**
@@ -251,8 +257,8 @@ quirk_get_name(enum quirk q)
 	case QUIRK_MODEL_BOUNCING_KEYS:			return "ModelBouncingKeys";
 	case QUIRK_MODEL_CHROMEBOOK:			return "ModelChromebook";
 	case QUIRK_MODEL_CLEVO_W740SU:			return "ModelClevoW740SU";
+	case QUIRK_MODEL_DELL_CANVAS_TOTEM:		return "ModelDellCanvasTotem";
 	case QUIRK_MODEL_HP_PAVILION_DM4_TOUCHPAD:	return "ModelHPPavilionDM4Touchpad";
-	case QUIRK_MODEL_HP_STREAM11_TOUCHPAD:		return "ModelHPStream11Touchpad";
 	case QUIRK_MODEL_HP_ZBOOK_STUDIO_G3:		return "ModelHPZBookStudioG3";
 	case QUIRK_MODEL_INVERT_HORIZONTAL_SCROLLING:	return "ModelInvertHorizontalScrolling";
 	case QUIRK_MODEL_LENOVO_SCROLLPOINT:		return "ModelLenovoScrollPoint";
@@ -266,9 +272,10 @@ quirk_get_name(enum quirk q)
 	case QUIRK_MODEL_TABLET_MODE_NO_SUSPEND:	return "ModelTabletModeNoSuspend";
 	case QUIRK_MODEL_TABLET_MODE_SWITCH_UNRELIABLE:	return "ModelTabletModeSwitchUnreliable";
 	case QUIRK_MODEL_TOUCHPAD_VISIBLE_MARKER:	return "ModelTouchpadVisibleMarker";
+	case QUIRK_MODEL_TOUCHPAD_PHANTOM_CLICKS:	return "ModelTouchpadPhantomClicks";
 	case QUIRK_MODEL_TRACKBALL:			return "ModelTrackball";
 	case QUIRK_MODEL_WACOM_TOUCHPAD:		return "ModelWacomTouchpad";
-	case QUIRK_MODEL_DELL_CANVAS_TOTEM:		return "ModelDellCanvasTotem";
+	case QUIRK_MODEL_PRESSURE_PAD:			return "ModelPressurePad";
 
 	case QUIRK_ATTR_SIZE_HINT:			return "AttrSizeHint";
 	case QUIRK_ATTR_TOUCH_SIZE_RANGE:		return "AttrTouchSizeRange";
@@ -283,12 +290,11 @@ quirk_get_name(enum quirk q)
 	case QUIRK_ATTR_TRACKPOINT_MULTIPLIER:		return "AttrTrackpointMultiplier";
 	case QUIRK_ATTR_THUMB_PRESSURE_THRESHOLD:	return "AttrThumbPressureThreshold";
 	case QUIRK_ATTR_USE_VELOCITY_AVERAGING:		return "AttrUseVelocityAveraging";
+	case QUIRK_ATTR_TABLET_SMOOTHING:               return "AttrTabletSmoothing";
 	case QUIRK_ATTR_THUMB_SIZE_THRESHOLD:		return "AttrThumbSizeThreshold";
 	case QUIRK_ATTR_MSC_TIMESTAMP:			return "AttrMscTimestamp";
-	case QUIRK_ATTR_EVENT_CODE_DISABLE:		return "AttrEventCodeDisable";
-	case QUIRK_ATTR_EVENT_CODE_ENABLE:		return "AttrEventCodeEnable";
-	case QUIRK_ATTR_INPUT_PROP_DISABLE:		return "AttrInputPropDisable";
-	case QUIRK_ATTR_INPUT_PROP_ENABLE:		return "AttrInputPropEnable";
+	case QUIRK_ATTR_EVENT_CODE:			return "AttrEventCode";
+	case QUIRK_ATTR_INPUT_PROP:			return "AttrInputProp";
 
 	case MOUSED_GRAB_DEVICE:			return "MousedGrabDevice";
 	case MOUSED_PID_FILE:				return "MousedPidFile";
@@ -345,6 +351,7 @@ matchflagname(enum match_flags f)
 	case M_DMI:		return "MatchDMIModalias";	break;
 	case M_UDEV_TYPE:	return "MatchUdevType";		break;
 	case M_DT:		return "MatchDeviceTree";	break;
+	case M_UNIQ:		return "MatchUniq";		break;
 	default:
 		abort();
 	}
@@ -499,6 +506,7 @@ section_destroy(struct section *s)
 
 	free(s->name);
 	free(s->match.name);
+	free(s->match.uniq);
 	free(s->match.dmi);
 	free(s->match.dt);
 
@@ -547,6 +555,9 @@ parse_match(struct quirks_context *ctx,
 	if (streq(key, "MatchName")) {
 		check_set_bit(s, M_NAME);
 		s->match.name = safe_strdup(value);
+	} else if (streq(key, "MatchUniq")) {
+		check_set_bit(s, M_UNIQ);
+		s->match.uniq = safe_strdup(value);
 	} else if (streq(key, "MatchBus")) {
 		check_set_bit(s, M_BUS);
 		if (streq(value, "usb"))
@@ -649,11 +660,7 @@ parse_model(struct quirks_context *ctx,
 
 	assert(strneq(key, "Model", 5));
 
-	if (streq(value, "1"))
-		b = true;
-	else if (streq(value, "0"))
-		b = false;
-	else
+	if (!parse_boolean_property(value, &b))
 		return false;
 
 	do {
@@ -722,7 +729,8 @@ parse_attr(struct quirks_context *ctx,
 	} else if (streq(key, quirk_get_name(QUIRK_ATTR_LID_SWITCH_RELIABILITY))) {
 		p->id = QUIRK_ATTR_LID_SWITCH_RELIABILITY;
 		if (!streq(value, "reliable") &&
-		    !streq(value, "write_open"))
+		    !streq(value, "write_open") &&
+		    !streq(value, "unreliable"))
 			goto out;
 		p->type = PT_STRING;
 		p->value.s = safe_strdup(value);
@@ -778,11 +786,14 @@ parse_attr(struct quirks_context *ctx,
 		rc = true;
 	} else if (streq(key, quirk_get_name(QUIRK_ATTR_USE_VELOCITY_AVERAGING))) {
 		p->id = QUIRK_ATTR_USE_VELOCITY_AVERAGING;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(QUIRK_ATTR_TABLET_SMOOTHING))) {
+		p->id = QUIRK_ATTR_TABLET_SMOOTHING;
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
@@ -808,14 +819,11 @@ parse_attr(struct quirks_context *ctx,
 		p->type = PT_STRING;
 		p->value.s = safe_strdup(value);
 		rc = true;
-	} else if (streq(key, quirk_get_name(QUIRK_ATTR_EVENT_CODE_DISABLE)) ||
-		   streq(key, quirk_get_name(QUIRK_ATTR_EVENT_CODE_ENABLE))) {
+	} else if (streq(key, quirk_get_name(QUIRK_ATTR_EVENT_CODE))) {
 		struct input_event events[32];
 		size_t nevents = ARRAY_LENGTH(events);
-		if (streq(key, quirk_get_name(QUIRK_ATTR_EVENT_CODE_DISABLE)))
-		    p->id = QUIRK_ATTR_EVENT_CODE_DISABLE;
-		else
-		    p->id = QUIRK_ATTR_EVENT_CODE_ENABLE;
+
+		p->id = QUIRK_ATTR_EVENT_CODE;
 
 		if (!parse_evcode_property(value, events, &nevents) ||
 		    nevents == 0)
@@ -824,27 +832,26 @@ parse_attr(struct quirks_context *ctx,
 		for (size_t i = 0; i < nevents; i++) {
 			p->value.tuples.tuples[i].first = events[i].type;
 			p->value.tuples.tuples[i].second = events[i].code;
+			p->value.tuples.tuples[i].third = events[i].value;
 		}
 		p->value.tuples.ntuples = nevents;
 		p->type = PT_TUPLES;
 
 		rc = true;
-	} else if (streq(key, quirk_get_name(QUIRK_ATTR_INPUT_PROP_DISABLE)) ||
-		   streq(key, quirk_get_name(QUIRK_ATTR_INPUT_PROP_ENABLE))) {
-		unsigned int props[INPUT_PROP_CNT];
+	} else if (streq(key, quirk_get_name(QUIRK_ATTR_INPUT_PROP))) {
+		struct input_prop props[INPUT_PROP_CNT];
 		size_t nprops = ARRAY_LENGTH(props);
-		if (streq(key, quirk_get_name(QUIRK_ATTR_INPUT_PROP_DISABLE)))
-			p->id = QUIRK_ATTR_INPUT_PROP_DISABLE;
-		else
-			p->id = QUIRK_ATTR_INPUT_PROP_ENABLE;
+
+		p->id = QUIRK_ATTR_INPUT_PROP;
 
 		if (!parse_input_prop_property(value, props, &nprops) ||
 		    nprops == 0)
 			goto out;
 
-		memcpy(p->value.array.data.u, props, nprops * sizeof(unsigned int));
-		p->value.array.nelements = nprops;
-		p->type = PT_UINT_ARRAY;
+		for (size_t i = 0; i < nprops; i++) {
+			p->value.tuples.tuples[i].first = props[i].prop;
+			p->value.tuples.tuples[i].second = props[i].enabled;
+		}
 
 		rc = true;
 	} else {
@@ -888,11 +895,7 @@ parse_moused(struct quirks_context *ctx,
 
 	if (streq(key, quirk_get_name(MOUSED_GRAB_DEVICE))) {
 		p->id = MOUSED_GRAB_DEVICE;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
@@ -910,11 +913,7 @@ parse_moused(struct quirks_context *ctx,
 
 	} else if (streq(key, quirk_get_name(MOUSED_CHORD_MIDDLE))) {
 		p->id = MOUSED_HSCROLL_ENABLE;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
@@ -928,11 +927,7 @@ parse_moused(struct quirks_context *ctx,
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_DRIFT_TERMINATE))) {
 		p->id = MOUSED_DRIFT_TERMINATE;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
@@ -960,11 +955,7 @@ parse_moused(struct quirks_context *ctx,
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_EMULATE_THIRD_BUTTON))) {
 		p->id = MOUSED_EMULATE_THIRD_BUTTON;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
@@ -992,11 +983,7 @@ parse_moused(struct quirks_context *ctx,
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_HSCROLL_ENABLE))) {
 		p->id = MOUSED_HSCROLL_ENABLE;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
@@ -1025,11 +1012,7 @@ parse_moused(struct quirks_context *ctx,
 	} else if (streq(key, quirk_get_name(MOUSED_MAP_Z_AXIS))) {
 	} else if (streq(key, quirk_get_name(MOUSED_VIRTUAL_SCROLL_ENABLE))) {
 		p->id = MOUSED_VIRTUAL_SCROLL_ENABLE;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
@@ -1043,11 +1026,7 @@ parse_moused(struct quirks_context *ctx,
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_WMODE))) {
 		p->id = MOUSED_WMODE;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
@@ -1055,33 +1034,21 @@ parse_moused(struct quirks_context *ctx,
 
 	} else if (streq(key, quirk_get_name(MOUSED_TWO_FINGER_SCROLL))) {
 		p->id = MOUSED_TWO_FINGER_SCROLL;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_NATURAL_SCROLL))) {
 		p->id = MOUSED_NATURAL_SCROLL;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_THREE_FINGER_DRAG))) {
 		p->id = MOUSED_THREE_FINGER_DRAG;
-		if (streq(value, "1"))
-			b = true;
-		else if (streq(value, "0"))
-			b = false;
-		else
+		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
@@ -1179,18 +1146,15 @@ out:
 static bool
 parse_value_line(struct quirks_context *ctx, struct section *s, const char *line)
 {
-	char **strv;
-	const char *key, *value;
 	bool rc = false;
 
-	strv = strv_from_string(line, "=");
-	if (strv[0] == NULL || strv[1] == NULL || strv[2] != NULL) {
+	size_t nelem;
+	char **strv = strv_from_string(line, "=", &nelem);
+	if (!strv || nelem != 2)
 		goto out;
-	}
 
-
-	key = strv[0];
-	value = strv[1];
+	const char *key = strv[0];
+	const char *value = strv[1];
 	if (strlen(key) == 0 || strlen(value) == 0)
 		goto out;
 
@@ -1512,6 +1476,7 @@ quirks_new(void)
 	q->refcount = 1;
 	q->nproperties = 0;
 	list_init(&q->link);
+	list_init(&q->floating_properties);
 
 	return q;
 }
@@ -1528,6 +1493,13 @@ quirks_unref(struct quirks *q)
 
 	for (size_t i = 0; i < q->nproperties; i++) {
 		property_unref(q->properties[i]);
+	}
+
+	/* Floating properties are owned by our quirks context, need to be
+	 * cleaned up here */
+	struct property *p;
+	list_for_each_safe(p, &q->floating_properties, link) {
+		property_cleanup(p);
 	}
 
 	list_remove(&q->link);
@@ -1547,6 +1519,18 @@ match_fill_name(struct match *m,
 	m->name = safe_strdup(device->name);
 
 	m->bits |= M_NAME;
+}
+
+static inline void
+match_fill_uniq(struct match *m,
+		struct device *device)
+{
+	if (device->uniq[0] == 0)
+		return;
+
+	m->uniq = safe_strdup(device->uniq);
+
+	m->bits |= M_UNIQ;
 }
 
 static inline void
@@ -1595,7 +1579,7 @@ match_fill_udev_type(struct match *m,
 	case DEVICE_TYPE_MOUSE:
 		m->udev_type |= UDEV_MOUSE;
 		break;
-	caseDEVICE_TYPE_POINTINGSTICK:
+	case DEVICE_TYPE_POINTINGSTICK:
 		m->udev_type |= UDEV_MOUSE | UDEV_POINTINGSTICK;
 		break;
 	case DEVICE_TYPE_TOUCHPAD:
@@ -1640,6 +1624,7 @@ match_new(struct device *device,
 	struct match *m = zalloc(sizeof *m);
 
 	match_fill_name(m, device);
+	match_fill_uniq(m, device);
 	match_fill_bus_vid_pid(m, device);
 	match_fill_dmi_dt(m, dmi, dt);
 	match_fill_udev_type(m, device);
@@ -1651,7 +1636,43 @@ match_free(struct match *m)
 {
 	/* dmi and dt are global */
 	free(m->name);
+	free(m->uniq);
 	free(m);
+}
+
+static void
+quirk_merge_event_codes(struct quirks_context *ctx,
+			struct quirks *q,
+			const struct property *property)
+{
+	for (size_t i = 0; i < q->nproperties; i++) {
+		struct property *p = q->properties[i];
+
+		if (p->id != property->id)
+			continue;
+
+		/* We have a duplicated property, merge in with ours */
+		size_t offset = p->value.tuples.ntuples;
+		size_t max = ARRAY_LENGTH(p->value.tuples.tuples);
+		for (size_t j = 0; j < property->value.tuples.ntuples; j++) {
+			if (offset + j >= max)
+				break;
+			p->value.tuples.tuples[offset + j] = property->value.tuples.tuples[j];
+			p->value.tuples.ntuples++;
+		}
+		return;
+	}
+
+	/* First time we add AttrEventCode: create a new property.
+	 * Unlike the other properties, this one isn't part of a section, it belongs
+	 * to the quirks */
+	struct property *newprop = property_new();
+	newprop->id = property->id;
+	newprop->type = property->type;
+	newprop->value.tuples = property->value.tuples;
+	/* Caller responsible for pre-allocating space */
+	q->properties[q->nproperties++] = property_ref(newprop);
+	list_append(&q->floating_properties, &newprop->link);
 }
 
 static void
@@ -1677,7 +1698,26 @@ quirk_apply_section(struct quirks_context *ctx,
 		qlog_debug(ctx, "property added: %s from %s\n",
 			   quirk_get_name(p->id), s->name);
 
-		q->properties[q->nproperties++] = property_ref(p);
+		/* All quirks but AttrEventCode and AttrInputProp
+		 * simply overwrite each other, so we can just append the
+		 * matching property and, later when checking the quirk, pick
+		 * the last one in the array.
+		 *
+		 * The event codes/input props are special because they're lists
+		 * that may *partially* override each other, e.g. a section may
+		 * enable BTN_LEFT and BTN_RIGHT but a later section may disable
+		 * only BTN_RIGHT. This should result in BTN_LEFT force-enabled
+		 * and BTN_RIGHT force-disabled.
+		 *
+		 * To hack around this, those are the only ones where only ever
+		 * have one struct property in the list (not owned by a section)
+		 * and we simply merge any extra sections onto that.
+		 */
+		if (p->id == QUIRK_ATTR_EVENT_CODE ||
+		    p->id == QUIRK_ATTR_INPUT_PROP)
+			quirk_merge_event_codes(ctx, q, p);
+		else
+			q->properties[q->nproperties++] = property_ref(p);
 	}
 }
 
@@ -1709,6 +1749,10 @@ quirk_match_section(struct quirks_context *ctx,
 		switch (flag) {
 		case M_NAME:
 			if (fnmatch(s->match.name, m->name, 0) == 0)
+				matched_flags |= flag;
+			break;
+		case M_UNIQ:
+			if (fnmatch(s->match.uniq, m->uniq, 0) == 0)
 				matched_flags |= flag;
 			break;
 		case M_BUS:
@@ -1791,7 +1835,6 @@ quirks_fetch_for_device(struct quirks_context *ctx,
 
 	return q;
 }
-
 
 static inline struct property *
 quirk_find_prop(struct quirks *q, enum quirk which)

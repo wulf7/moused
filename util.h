@@ -51,7 +51,13 @@ struct device {
 	char *path;
 	enum device_type type;
 	char name[80];
+	char uniq[80];
 	struct input_id id;
+};
+
+struct input_prop {
+	unsigned int prop;
+	bool enabled;
 };
 
 /**
@@ -87,11 +93,13 @@ safe_atou(const char *str, unsigned int *val)
 bool	safe_atod(const char *str, double *val);
 void	strv_free(char **strv);
 const char *next_word(const char **state, size_t *len, const char *separators);
-char **	strv_from_string(const char *in, const char *separators);
+char **	strv_from_string(const char *in, const char *separators,
+	    size_t *num_elements);
 bool	strendswith(const char *str, const char *suffix);
 bool	parse_dimension_property(const char *prop, size_t *w, size_t *h);
 bool	parse_range_property(const char *prop, int *hi, int *lo);
+bool	parse_boolean_property(const char *prop, bool *b);
 bool	parse_evcode_property(const char *prop, struct input_event *events,
 	    size_t *nevents);
-bool	parse_input_prop_property(const char *prop, unsigned int *props_out,
-	    size_t *nprops);
+bool	parse_input_prop_property(const char *prop,
+	    struct input_prop *props_out, size_t *nprops);

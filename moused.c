@@ -3,7 +3,7 @@
  **
  ** Copyright (c) 1995 Michael Smith, All rights reserved.
  ** Copyright (c) 2008 Jean-Sebastien Pedron <dumbbell@FreeBSD.org>
- ** Copyright (c) 2021 Vladimir Kondratyev <wulf@FreeBSD.org>
+ ** Copyright (c) 2021,2024 Vladimir Kondratyev <wulf@FreeBSD.org>
  **
  ** Redistribution and use in source and binary forms, with or without
  ** modification, are permitted provided that the following conditions
@@ -1213,6 +1213,8 @@ r_identify(int fd, struct device *dev)
 	/* Do not loop events */
 	if (strncmp(dev->name, "System mouse", sizeof(dev->name)) == 0)
 		return (DEVICE_TYPE_UNKNOWN);
+
+	(void)ioctl(fd, EVIOCGUNIQ(sizeof(dev->uniq) - 1), dev->uniq);
 
 	has_keys = bit_find(key_bits, 0, BTN_MISC - 1);
 	has_buttons = bit_find(key_bits, BTN_MISC, BTN_JOYSTICK - 1);
