@@ -2204,61 +2204,51 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 			return (GEST_IGNORE);
 		}
 
-		dx = -1;
-		dy = -1;
+		dx = abs(x0 - start_x);
+		dy = abs(y0 - start_y);
 
-		/* Is a scrolling action occurring? */
+		/*
+		 * A scrolling action must not conflict with a tap action.
+		 * Here are the conditions to consider a scrolling action:
+		 *  - the action in a configurable area
+		 *  - one of the following:
+		 *     . the distance between the last packet and the
+		 *       first should be above a configurable minimum
+		 *     . tap timed out
+		 */
 		if (!gest->in_taphold && !ms->button &&
-		    (!gest->in_vscroll || two_finger_scroll)) {
+		    (!gest->in_vscroll || two_finger_scroll) &&
+		    (tvcmp(time, &gest->taptimeout, >) ||
+		     dx >= syninfo.vscroll_min_delta * synhw.res_x ||
+		     dy >= syninfo.vscroll_min_delta * synhw.res_y)) {
 			/*
-			 * A scrolling action must not conflict with a tap
-			 * action. Here are the conditions to consider a
-			 * scrolling action:
-			 *  - the action in a configurable area
-			 *  - one of the following:
-			 *     . the distance between the last packet and the
-			 *       first should be above a configurable minimum
-			 *     . tap timed out
+			 * Handle two finger scrolling.
+			 * Note that we don't rely on fingers_nb
+			 * as that keeps the maximum number of fingers.
 			 */
-			dx = abs(x0 - start_x);
-			dy = abs(y0 - start_y);
-
-			if (tvcmp(time, &gest->taptimeout, >) ||
-			    dx >= syninfo.vscroll_min_delta * synhw.res_x ||
-			    dy >= syninfo.vscroll_min_delta * synhw.res_y) {
-				/*
-				 * Handle two finger scrolling.
-				 * Note that we don't rely on fingers_nb
-				 * as that keeps the maximum number of fingers.
-				 */
-				if (two_finger_scroll) {
-					if (nfingers == 2) {
-						gest->in_vscroll += dy ? 2 : 0;
-						gest->in_vscroll += dx ? 1 : 0;
-					}
-				} else {
-					/* Check for horizontal scrolling. */
-					if ((vscroll_hor_area > 0 &&
-					    start_y <=
-					     min_y + vscroll_hor_area) ||
-					    (vscroll_hor_area < 0 &&
-					    start_y >=
-					     max_y + vscroll_hor_area))
-						gest->in_vscroll += 2;
-
-					/* Check for vertical scrolling. */
-					if ((vscroll_ver_area > 0 &&
-					    start_x <=
-					     min_x + vscroll_ver_area) ||
-					    (vscroll_ver_area < 0 &&
-					     start_x >=
-					     max_x + vscroll_ver_area))
-						gest->in_vscroll += 1;
+			if (two_finger_scroll) {
+				if (nfingers == 2) {
+					gest->in_vscroll += dy ? 2 : 0;
+					gest->in_vscroll += dx ? 1 : 0;
 				}
-				/* Avoid conflicts if area overlaps. */
-				if (gest->in_vscroll >= 3)
-					gest->in_vscroll = (dx > dy) ? 2 : 1;
+			} else {
+				/* Check for horizontal scrolling. */
+				if ((vscroll_hor_area > 0 &&
+				     start_y <= min_y + vscroll_hor_area) ||
+				    (vscroll_hor_area < 0 &&
+				     start_y >= max_y + vscroll_hor_area))
+					gest->in_vscroll += 2;
+
+				/* Check for vertical scrolling. */
+				if ((vscroll_ver_area > 0 &&
+				     start_x <= min_x + vscroll_ver_area) ||
+				    (vscroll_ver_area < 0 &&
+				     start_x >= max_x + vscroll_ver_area))
+					gest->in_vscroll += 1;
 			}
+			/* Avoid conflicts if area overlaps. */
+			if (gest->in_vscroll >= 3)
+				gest->in_vscroll = (dx > dy) ? 2 : 1;
 		}
 		/*
 		 * Reset two finger scrolling when the number of fingers
@@ -2289,9 +2279,6 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		/* Max delta is disabled for multi-fingers tap. */
 		if (gest->fingers_nb == 1 &&
 		    tvcmp(time, &gest->taptimeout, <=)) {
-			dx = abs(gest->prev_x - gest->start_x);
-			dy = abs(gest->prev_y - gest->start_y);
-
 			tap_max_delta_x = syninfo.tap_max_delta * synhw.res_x;
 			tap_max_delta_y = syninfo.tap_max_delta * synhw.res_y;
 
