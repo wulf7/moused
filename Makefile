@@ -6,7 +6,8 @@ LOCALBASE?=	/usr/local
 PREFIX?=	${LOCALBASE}
 BINDIR?=	${PREFIX}/sbin
 MANDIR?=	${PREFIX}/man/man
-CONFSDIR=       ${PREFIX}/etc/devd
+DEVDDIR=	${PREFIX}/etc/devd
+CONFSDIR=	${PREFIX}/etc
 FILESDIR=	${PREFIX}/share/${PROG}
 
 QUIRKS=	10-generic-keyboard.quirks \
@@ -59,10 +60,13 @@ QUIRKS=	10-generic-keyboard.quirks \
 PROG=		moused
 SRCS=		moused.c quirks.c quirks.h util.c util.h util-list.c util-list.h
 MAN=		moused.8
-CONFS=		devd.conf
-CONFSNAME=	moused.conf
+CONFGROUPS=	DEVD MOUSED
+DEVD=		devd.conf
+DEVDNAME=	moused.conf
+CONFS=		moused.conf
 FILES=		${QUIRKS:S|^|quirks/|}
 
+CFLAGS+=	-DCONFSDIR=\"${CONFSDIR}\" -DQUIRKSDIR=\"${FILESDIR}\"
 LDADD=		-lm -lutil
 
 .include <bsd.prog.mk>

@@ -186,8 +186,8 @@ static bool	grab = false;
 static int	identify = ID_NONE;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
-static const char *config_file = "moused.conf";
-static const char *quirks_path = NULL;
+static const char *config_file = CONFSDIR "/moused.conf";
+static const char *quirks_path = QUIRKSDIR;
 static struct quirks_context *quirks;
 
 static bool	opt_drift_terminate = false;
