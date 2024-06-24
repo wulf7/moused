@@ -1637,8 +1637,8 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 		switch (r_gestures(ev.st.x, ev.st.y, ev.st.p, ev.st.w,
 		    ev.nfingers, &ie->time, act)) {
 		case GEST_IGNORE:
-			ev.dx = -ev.acc_dx;
-			ev.dy = -ev.acc_dy;
+			ev.dx = 0;
+			ev.dy = 0;
 			ev.dz = 0;
 			ev.acc_dx = ev.acc_dy = 0;
 			debug("gesture IGNORE");
@@ -1647,8 +1647,12 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 			ev.acc_dx += ev.dx;
 			ev.acc_dy += ev.dy;
 			debug("gesture ACCUMULATE %d,%d", ev.dx, ev.dy);
+			ev.dx = 0;
+			ev.dy = 0;
 			break;
 		case GEST_MOVE:		/* Pointer movement. */
+			ev.dx += ev.acc_dx;
+			ev.dy += ev.acc_dy;
 			ev.acc_dx = ev.acc_dy = 0;
 			debug("gesture MOVE %d,%d", ev.dx, ev.dy);
 			break;
@@ -2038,7 +2042,6 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
     mousestatus_t *ms)
 {
 	struct gesture_state *gest = &gesture;
-	int dx, dy;
 
 	/*
 	 * Check pressure to detect a real wanted action on the
@@ -2047,11 +2050,13 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 	if (z >= syninfo.min_pressure) {
 		bool two_finger_scroll;
 		bool three_finger_drag;
+		int dx, dy;
 		int start_x, start_y;
 		int max_width, max_pressure;
 		int margin_top, margin_right, margin_bottom, margin_left;
 		int vscroll_hor_area, vscroll_ver_area;
 		int max_x, max_y, min_x, min_y;
+		int tap_max_delta_x, tap_max_delta_y;
 		int tap_timeout;
 		int prev_nfingers;
 
@@ -2278,12 +2283,31 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		case 2:
 			return (GEST_HSCROLL);
 		default:
-			if (tvcmp(time, &gest->taptimeout, <=))
-				return (gest->fingers_nb > 1 ?
-				    GEST_IGNORE : GEST_ACCUMULATE);
-			else
-				return (GEST_MOVE);
+			/* NO-OP */;
 		}
+
+		/* Max delta is disabled for multi-fingers tap. */
+		if (gest->fingers_nb == 1 &&
+		    tvcmp(time, &gest->taptimeout, <=)) {
+			dx = abs(gest->prev_x - gest->start_x);
+			dy = abs(gest->prev_y - gest->start_y);
+
+			tap_max_delta_x = syninfo.tap_max_delta * synhw.res_x;
+			tap_max_delta_y = syninfo.tap_max_delta * synhw.res_y;
+
+			debug("dx=%d, dy=%d, deltax=%d, deltay=%d",
+			    dx, dy, tap_max_delta_x, tap_max_delta_y);
+			if (dx > tap_max_delta_x || dy > tap_max_delta_y) {
+				debug("not a tap");
+				tvclr(&gest->taptimeout);
+			}
+		}
+
+		if (tvcmp(time, &gest->taptimeout, <=))
+			return (gest->fingers_nb > 1 ?
+			    GEST_IGNORE : GEST_ACCUMULATE);
+		else
+			return (GEST_MOVE);
 	}
 
 	/*
@@ -2301,29 +2325,13 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		 * An action is currently taking place but the pressure
 		 * dropped under the minimum, putting an end to it.
 		 */
-		int tap_max_delta_x, tap_max_delta_y;
-
-		dx = abs(gest->prev_x - gest->start_x);
-		dy = abs(gest->prev_y - gest->start_y);
-
-		/* Max delta is disabled for multi-fingers tap. */
-		if (gest->fingers_nb > 1) {
-			tap_max_delta_x = dx;
-			tap_max_delta_y = dy;
-		} else {
-			tap_max_delta_x = syninfo.tap_max_delta * synhw.res_x;
-			tap_max_delta_y = syninfo.tap_max_delta * synhw.res_y;
-		}
 
 		gest->fingerdown = false;
 
 		/* Check for tap. */
-		debug("zmax=%d, dx=%d, dy=%d, deltax=%d, deltay=%d, "
-		    "fingers=%d", gest->zmax, dx, dy, tap_max_delta_x,
-		    tap_max_delta_y, gest->fingers_nb);
+		debug("zmax=%d fingers=%d", gest->zmax, gest->fingers_nb);
 		if (!gest->in_vscroll && gest->zmax >= syninfo.tap_threshold &&
-		    tvcmp(time, &gest->taptimeout, <=) &&
-		    dx <= tap_max_delta_x && dy <= tap_max_delta_y) {
+		    tvcmp(time, &gest->taptimeout, <=)) {
 			/*
 			 * We have a tap if:
 			 *   - the maximum pressure went over tap_threshold
