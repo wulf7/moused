@@ -2,13 +2,10 @@
 
 MK_DEBUG_FILES=	no
 
+PROG=		moused
+
 LOCALBASE?=	/usr/local
 PREFIX?=	${LOCALBASE}
-BINDIR?=	${PREFIX}/sbin
-MANDIR?=	${PREFIX}/man/man
-DEVDDIR=	${PREFIX}/etc/devd
-CONFSDIR=	${PREFIX}/etc
-FILESDIR=	${PREFIX}/share/${PROG}
 
 QUIRKS=	10-generic-keyboard.quirks \
 	10-generic-mouse.quirks \
@@ -57,17 +54,30 @@ QUIRKS=	10-generic-keyboard.quirks \
 	50-system-toshiba.quirks \
 	50-system-vaio.quirks
 
-PROG=		moused
 SRCS=		moused.c quirks.c quirks.h util.c util.h util-list.c util-list.h
-MAN=		moused.8
-CONFGROUPS=	DEVD MOUSED
-DEVD=		devd.conf
-DEVDNAME=	moused.conf
-CONFS=		moused.conf
-FILES=		${QUIRKS:S|^|quirks/|}
-
 CFLAGS+=	-DCONFSDIR=\"${CONFSDIR}\" -DQUIRKSDIR=\"${FILESDIR}\"
 LDADD=		-lm -lutil
+BINDIR?=	${PREFIX}/sbin
+
+MAN=		moused.8
+MANDIR?=	${PREFIX}/man/man
+
+CONFGROUPS=	DEVD MOUSED RC
+
+DEVD=		devd.conf
+DEVDNAME=	moused.conf
+DEVDDIR=	${PREFIX}/etc/devd
+
+CONFS=		moused.conf
+CONFSDIR=	${PREFIX}/etc
+
+RC=		moused.rc
+RCNAME=		evdev_moused
+RCDIR=		${PREFIX}/etc/rc.d
+RCMODE=		${BINMODE}
+
+FILES=		${QUIRKS:S|^|quirks/|}
+FILESDIR=	${PREFIX}/share/${PROG}
 
 .include <bsd.prog.mk>
 

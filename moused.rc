@@ -1,0 +1,75 @@
+#!/bin/sh
+#
+#
+
+# PROVIDE: evdev_moused
+# REQUIRE: DAEMON FILESYSTEMS
+# KEYWORD: nojail shutdown
+
+. /etc/rc.subr
+
+name="moused"
+desc="Mouse daemon"
+rcvar="evdev_moused_enable"
+command="/usr/local/sbin/${name}"
+start_cmd="moused_start"
+pidprefix="/var/run/moused"
+pidfile="${pidprefix}.pid"
+pidarg=
+load_rc_config $name
+
+# doesn't make sense to run in a svcj: nojail keyword
+# XXX: How does moused communiacte with the kernel?
+# XXX: Does the kernel prevent this communcation in jails?
+moused_svcj="NO"
+
+# Set the pid file and variable name. The second argument, if it exists, is
+# expected to be the mouse device.
+#
+if [ -n "$2" ]; then
+	ms=`basename $2`
+	eval evdev_moused_${ms}_enable=\${evdev_moused_${ms}_enable-${evdev_moused_enable}}
+	rcvar="evdev_moused_${ms}_enable"
+	pidfile="${pidprefix}.$ms.pid"
+	pidarg="-I $pidfile"
+else
+	for dev in /dev/input/event[0-9]*; do
+		$0 $1 `echo ${dev} | cut -c 6-`
+	done
+	exit 0
+fi
+
+moused_start()
+{
+	local ms myflags myport
+
+	# Set the mouse device and get any related variables. If
+	# a moused device has been specified on the commandline, then
+	# rc.conf(5) variables defined for that device take precedence
+	# over the generic moused_* variables. The only exception is
+	# the moused_port variable, which if not defined sets it to the
+	# passed in device name.
+	#
+	ms=`basename $1`
+	eval myflags=\${moused_${ms}_flags-$moused_flags}
+	eval myport=\${moused_${ms}_port-/dev/input/$ms}
+
+	startmsg -n "Starting ${ms} moused"
+	/usr/local/sbin/moused ${myflags} -p ${myport} ${pidarg}
+	startmsg '.'
+
+	mousechar_arg=
+	case ${mousechar_start} in
+	[Nn][Oo] | '')
+		;;
+	*)
+		mousechar_arg="-M ${mousechar_start}"
+		;;
+	esac
+
+	for ttyv in /dev/ttyv* ; do
+		vidcontrol < ${ttyv} ${mousechar_arg} -m on
+	done
+}
+
+run_rc_command $*

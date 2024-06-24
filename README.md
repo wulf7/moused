@@ -39,14 +39,14 @@ and you will get the compiled moused installed in **/usr/local/sbin**.
 You may need to restart devd to apply bundled devd rules.
 
 To run **moused** at a boot time, disable system moused in **/etc/rc.conf**
-with commenting out of appropriate line and add following lines to
-**/etc/rc.local**
-
+with
 ```
-vidcontrol -m on
-for file in /dev/input/event[0-9]*; do
-        /usr/local/sbin/moused -p $file -I /var/run/moused.`echo $file | cut -c 12-`.pid
-done
+# sysrc moused_enable="NO"
+# sysrc moused_nondefault_enable="NO"
+```
+And enable this moused with
+```
+# sysrc evdev_moused_enable="YES"
 ```
 
 To prevent double movement on bluetooth devices, following patch should be
