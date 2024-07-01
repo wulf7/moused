@@ -60,7 +60,7 @@ LDADD=		-lm -lutil
 BINDIR?=	${PREFIX}/sbin
 
 MAN=		moused.8
-MANDIR?=	${PREFIX}/man/man
+MANDIR?=	${PREFIX}/share/man/man
 
 CONFGROUPS=	DEVD MOUSED RC
 
