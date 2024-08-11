@@ -113,7 +113,6 @@ enum quirk {
 	/* Daemon parameters */
 	MOUSED_GRAB_DEVICE = 1000,
 	MOUSED_PID_FILE,
-	MOUSED_QUIRKS_DIRECTORY,
 
 	/* Standard moused parameters */
 	MOUSED_CHORD_MIDDLE,

@@ -298,7 +298,6 @@ quirk_get_name(enum quirk q)
 
 	case MOUSED_GRAB_DEVICE:			return "MousedGrabDevice";
 	case MOUSED_PID_FILE:				return "MousedPidFile";
-	case MOUSED_QUIRKS_DIRECTORY:			return "MousedQuirksDirectory";
 
 	case MOUSED_CHORD_MIDDLE:			return "MousedChordMiddle";
 	case MOUSED_CLICK_THRESHOLD:			return "MousedClickThreshold";
@@ -905,12 +904,6 @@ parse_moused(struct quirks_context *ctx,
 		p->type = PT_STRING;
 		p->value.s = safe_strdup(value);
 		rc = true;
-	} else if (streq(key, quirk_get_name(MOUSED_QUIRKS_DIRECTORY))) {
-		p->id = MOUSED_QUIRKS_DIRECTORY;
-		p->type = PT_STRING;
-		p->value.s = safe_strdup(value);
-		rc = true;
-
 	} else if (streq(key, quirk_get_name(MOUSED_CHORD_MIDDLE))) {
 		p->id = MOUSED_HSCROLL_ENABLE;
 		if (!parse_boolean_property(value, &b))
@@ -1387,16 +1380,14 @@ parse_files(struct quirks_context *ctx, const char *data_path)
 }
 
 struct quirks_context *
-quirks_init_subsystem(const char *config_file,
-		      const char *quirks_path,
+quirks_init_subsystem(const char *data_path,
+		      const char *override_file,
 		      moused_log_handler log_handler,
 		      enum quirks_log_type log_type)
 {
 	struct quirks_context *ctx = zalloc(sizeof *ctx);
-	struct section *s;
-	struct property *p;
 
-	assert(config_file);
+	assert(data_path);
 
 	ctx->refcount = 1;
 	ctx->log_handler = log_handler;
@@ -1404,23 +1395,17 @@ quirks_init_subsystem(const char *config_file,
 	list_init(&ctx->quirks);
 	list_init(&ctx->sections);
 
-	qlog_debug(ctx, "%s is configuration file\n", config_file);
+	qlog_debug(ctx, "%s is data root\n", data_path);
 
 	ctx->dmi = init_dmi();
 	ctx->dt = init_dt();
 	if (!ctx->dmi && !ctx->dt)
 		goto error;
 
-	if (!parse_file(ctx, config_file))
+	if (!parse_files(ctx, data_path))
 		goto error;
 
-	if (quirks_path == NULL)
-		list_for_each(s, &ctx->sections, link)
-			list_for_each(p, &s->properties, link)
-				if (p->id == MOUSED_QUIRKS_DIRECTORY)
-					quirks_path = p->value.s;
-
-	if (quirks_path && !parse_files(ctx, quirks_path))
+	if (override_file && !parse_file(ctx, override_file))
 		goto error;
 
 	return ctx;

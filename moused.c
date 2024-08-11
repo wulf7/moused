@@ -705,7 +705,7 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	quirks = quirks_init_subsystem(config_file, quirks_path,
+	quirks = quirks_init_subsystem(quirks_path, config_file,
 	    log_or_warn_va,
 	    background ? QLOG_MOUSED_LOGGING : QLOG_CUSTOM_LOG_PRIORITIES);
 	if (quirks == NULL)
