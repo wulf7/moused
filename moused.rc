@@ -34,7 +34,7 @@ if [ -n "$2" ]; then
 	pidarg="-I $pidfile"
 else
 	for dev in /dev/input/event[0-9]*; do
-		$0 $1 `echo ${dev} | cut -c 6-`
+		/usr/local/etc/rc.d/evdev_moused $1 `echo ${dev} | cut -c 6-`
 	done
 	exit 0
 fi
