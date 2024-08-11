@@ -348,7 +348,7 @@ matchflagname(enum match_flags f)
 	case M_PID:		return "MatchProduct";		break;
 	case M_VERSION:		return "MatchVersion";		break;
 	case M_DMI:		return "MatchDMIModalias";	break;
-	case M_UDEV_TYPE:	return "MatchUdevType";		break;
+	case M_UDEV_TYPE:	return "MatchDevType";		break;
 	case M_DT:		return "MatchDeviceTree";	break;
 	case M_UNIQ:		return "MatchUniq";		break;
 	default:
@@ -606,7 +606,7 @@ parse_match(struct quirks_context *ctx,
 			goto out;
 		}
 		s->match.dmi = safe_strdup(value);
-	} else if (streq(key, "MatchUdevType")) {
+	} else if (streq(key, "MatchUdevType") || streq(key, "MatchDevType")) {
 		check_set_bit(s, M_UDEV_TYPE);
 		if (streq(value, "touchpad"))
 			s->match.udev_type = UDEV_TOUCHPAD;
