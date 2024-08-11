@@ -68,8 +68,8 @@ DEVD=		devd.conf
 DEVDNAME=	moused.conf
 DEVDDIR=	${PREFIX}/etc/devd
 
-CONFS=		moused.conf
-CONFSDIR=	${PREFIX}/etc
+MOUSED=		moused.conf
+MOUSEDDIR=	${PREFIX}/etc
 
 RC=		moused.rc
 RCNAME=		evdev_moused
