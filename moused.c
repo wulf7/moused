@@ -463,6 +463,7 @@ static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
 int
 main(int argc, char *argv[])
 {
+	pid_t mpid;
 	int c;
 	int	i;
 	int	j;
@@ -680,6 +681,9 @@ main(int argc, char *argv[])
 		usage();
 	}
 
+	if ((rodent.cfd = open("/dev/consolectl", O_RDWR, 0)) == -1)
+		logerr(1, "cannot open /dev/consolectl");
+
 	switch (setjmp(env)) {
 	case SIGHUP:
 		quirks_unref(rodent.quirks);
@@ -753,6 +757,25 @@ main(int argc, char *argv[])
 	rodent.quirks = quirks_fetch_for_device(quirks, &rodent.dev);
 
 	r_init();			/* call init function */
+
+	if (!nodaemon && !background) {
+		pfh = pidfile_open(pidfile, 0600, &mpid);
+		if (pfh == NULL) {
+			if (errno == EEXIST)
+				logerrx(1, "moused already running, pid: %d", mpid);
+			logwarn("cannot open pid file");
+		}
+		if (daemon(0, 0)) {
+			int saved_errno = errno;
+			pidfile_remove(pfh);
+			errno = saved_errno;
+			logerr(1, "failed to become a daemon");
+		} else {
+			background = true;
+			pidfile_write(pfh);
+		}
+	}
+
 	moused();
 
 	quirks_unref(rodent.quirks);
@@ -846,31 +869,9 @@ moused(void)
     bool timeout_em3b;
     struct pollfd fds;
     struct input_event b;
-    pid_t mpid;
     int flags;
     int c;
     int i;
-
-    if ((rodent.cfd = open("/dev/consolectl", O_RDWR, 0)) == -1)
-	logerr(1, "cannot open /dev/consolectl");
-
-    if (!nodaemon && !background) {
-	pfh = pidfile_open(pidfile, 0600, &mpid);
-	if (pfh == NULL) {
-	    if (errno == EEXIST)
-		logerrx(1, "moused already running, pid: %d", mpid);
-	    logwarn("cannot open pid file");
-	}
-	if (daemon(0, 0)) {
-	    int saved_errno = errno;
-	    pidfile_remove(pfh);
-	    errno = saved_errno;
-	    logerr(1, "failed to become a daemon");
-	} else {
-	    background = true;
-	    pidfile_write(pfh);
-	}
-    }
 
     /* clear mouse data */
     bzero(&action0, sizeof(action0));
