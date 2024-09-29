@@ -116,23 +116,8 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 /* Operations on timespecs */
 #define	tsclr(tvp)		timespecclear(tvp)
 #define	tscmp(tvp, uvp, cmp)	timespeccmp(tvp, uvp, cmp)
+#define	tsadd(tvp, uvp)		timespecadd(tvp, uvp, tvp)
 #define	tssub(tvp, uvp, vvp)	timespecsub(tvp, uvp, vvp)
-
-/* Operations on timevals. */
-#define	tvclr(tvp)	((tvp)->tv_sec = (tvp)->tv_usec = 0)
-#define	tvcmp(tvp, uvp, cmp)						\
-	(((tvp)->tv_sec == (uvp)->tv_sec) ?				\
-	    ((tvp)->tv_usec cmp (uvp)->tv_usec) :			\
-	    ((tvp)->tv_sec cmp (uvp)->tv_sec))
-#define	tvadd(tvp, uvp)							\
-	do {								\
-		(tvp)->tv_sec += (uvp)->tv_sec;				\
-		(tvp)->tv_usec += (uvp)->tv_usec;			\
-		if ((tvp)->tv_usec >= 1000000) {			\
-			(tvp)->tv_sec++;				\
-			(tvp)->tv_usec -= 1000000;			\
-		}							\
-	} while (0)
 
 #define debug(...) do {						\
 	if (debug && nodaemon)					\
@@ -279,8 +264,8 @@ static struct gesture_state {
 	bool		in_taphold;
 	int		in_vscroll;
 	int		zmax;           /* maximum pressure value */
-	struct timeval	taptimeout;     /* tap timeout for touchpads */
-	struct timeval	startdelay;
+	struct timespec	taptimeout;     /* tap timeout for touchpads */
+	struct timespec	startdelay;
 	int		idletimeout;
 } gesture = {
 	.idletimeout = -1,
@@ -451,7 +436,7 @@ static bool	r_timeout(void);
 static void	r_click(mousestatus_t *act);
 static bool	r_drift(struct drift *, mousestatus_t *);
 static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
-		    struct timeval *time, mousestatus_t *ms);
+		    struct timespec *time, mousestatus_t *ms);
 
 int
 main(int argc, char *argv[])
@@ -1486,6 +1471,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	    MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN,
 	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN
 	};
+	struct timespec ietime;
 	int i, active;
 
 	if (debug > 1)
@@ -1595,6 +1581,9 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	 * assembly full package
 	 */
 
+	ietime.tv_sec = ie->time.tv_sec;
+	ietime.tv_nsec = ie->time.tv_usec * 1000;
+
 	if (!synhw.cap_pressure && ev.st.id != 0)
 		ev.st.p = MAX(syninfo.min_pressure_hi, syninfo.tap_threshold);
 	if (synhw.cap_touch && ev.st.id == 0)
@@ -1625,7 +1614,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 			debug("absolute data %d,%d,%d,%d", ev.st.x, ev.st.y,
 			    ev.st.p, ev.st.w);
 		switch (r_gestures(ev.st.x, ev.st.y, ev.st.p, ev.st.w,
-		    ev.nfingers, &ie->time, act)) {
+		    ev.nfingers, &ietime, act)) {
 		case GEST_IGNORE:
 			ev.dx = 0;
 			ev.dy = 0;
@@ -2031,7 +2020,7 @@ r_click(mousestatus_t *act)
 }
 
 static enum gesture
-r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
+r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
     mousestatus_t *ms)
 {
 	struct gesture_state *gest = &gesture;
@@ -2124,19 +2113,19 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 
 			/* Compute tap timeout. */
 			if (tap_timeout != 0) {
-				gest->taptimeout = (struct timeval) {
+				gest->taptimeout = (struct timespec) {
 					.tv_sec  = tap_timeout / 1000,
-					.tv_usec = tap_timeout % 1000 * 1000,
+					.tv_nsec = tap_timeout % 1000 * 1000000,
 				};
-				tvadd(&gest->taptimeout, time);
+				tsadd(&gest->taptimeout, time);
 			} else
-				tvclr(&gest->taptimeout);
+				tsclr(&gest->taptimeout);
 
-			gest->startdelay = (struct timeval) {
+			gest->startdelay = (struct timespec) {
 				.tv_sec  = 0,
-				.tv_usec = 25000,
+				.tv_nsec = 25000000,
 			};
-			tvadd(&gest->startdelay, time);
+			tsadd(&gest->startdelay, time);
 
 			gest->fingerdown = true;
 
@@ -2192,7 +2181,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		gest->zmax = MAX(z, gest->zmax);
 
 		/* Ignore few events at beginning. They are often noisy */
-		if (tvcmp(time, &gest->startdelay, <=)) {
+		if (tscmp(time, &gest->startdelay, <=)) {
 			gest->start_x = x0;
 			gest->start_y = y0;
 			return (GEST_IGNORE);
@@ -2212,7 +2201,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		 */
 		if (!gest->in_taphold && !ms->button &&
 		    (!gest->in_vscroll || two_finger_scroll) &&
-		    (tvcmp(time, &gest->taptimeout, >) ||
+		    (tscmp(time, &gest->taptimeout, >) ||
 		     dx >= syninfo.vscroll_min_delta * synhw.res_x ||
 		     dy >= syninfo.vscroll_min_delta * synhw.res_y)) {
 			/*
@@ -2272,7 +2261,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 
 		/* Max delta is disabled for multi-fingers tap. */
 		if (gest->fingers_nb == 1 &&
-		    tvcmp(time, &gest->taptimeout, <=)) {
+		    tscmp(time, &gest->taptimeout, <=)) {
 			tap_max_delta_x = syninfo.tap_max_delta * synhw.res_x;
 			tap_max_delta_y = syninfo.tap_max_delta * synhw.res_y;
 
@@ -2280,11 +2269,11 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 			    dx, dy, tap_max_delta_x, tap_max_delta_y);
 			if (dx > tap_max_delta_x || dy > tap_max_delta_y) {
 				debug("not a tap");
-				tvclr(&gest->taptimeout);
+				tsclr(&gest->taptimeout);
 			}
 		}
 
-		if (tvcmp(time, &gest->taptimeout, <=))
+		if (tscmp(time, &gest->taptimeout, <=))
 			return (gest->fingers_nb > 1 ?
 			    GEST_IGNORE : GEST_ACCUMULATE);
 		else
@@ -2312,7 +2301,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		/* Check for tap. */
 		debug("zmax=%d fingers=%d", gest->zmax, gest->fingers_nb);
 		if (!gest->in_vscroll && gest->zmax >= syninfo.tap_threshold &&
-		    tvcmp(time, &gest->taptimeout, <=)) {
+		    tscmp(time, &gest->taptimeout, <=)) {
 			/*
 			 * We have a tap if:
 			 *   - the maximum pressure went over tap_threshold
@@ -2349,7 +2338,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 				 */
 				gest->in_taphold = true;
 				gest->idletimeout = syninfo.taphold_timeout;
-				tvadd(&gest->taptimeout, time);
+				tsadd(&gest->taptimeout, time);
 
 				switch (gest->fingers_nb) {
 				case 3:
@@ -2385,7 +2374,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 		 * least until timeout (where the in_taphold flags will be
 		 * cleared) or during the next action.
 		 */
-		if (tvcmp(time, &gest->taptimeout, <=)) {
+		if (tscmp(time, &gest->taptimeout, <=)) {
 			ms->button |= gest->tap_button;
 		} else {
 			debug("button RELEASE: %d", gest->tap_button);
