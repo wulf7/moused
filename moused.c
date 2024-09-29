@@ -116,8 +116,30 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 /* Operations on timespecs */
 #define	tsclr(tvp)		timespecclear(tvp)
 #define	tscmp(tvp, uvp, cmp)	timespeccmp(tvp, uvp, cmp)
-#define	tsadd(tvp, uvp)		timespecadd(tvp, uvp, tvp)
 #define	tssub(tvp, uvp, vvp)	timespecsub(tvp, uvp, vvp)
+static inline struct timespec
+tsaddms(struct timespec* tsp, u_int ms)
+{
+	struct timespec ret;
+
+	ret.tv_sec = ms / 1000;
+	ret.tv_nsec = ms % 1000 * 1000000;
+	timespecadd(tsp, &ret, &ret);
+
+	return (ret);
+};
+
+static inline struct timespec
+tssubms(struct timespec* tsp, u_int ms)
+{
+	struct timespec ret;
+
+	ret.tv_sec = ms / 1000;
+	ret.tv_nsec = ms % 1000 * 1000000;
+	timespecsub(tsp, &ret, &ret);
+
+	return (ret);
+};
 
 #define debug(...) do {						\
 	if (debug && nodaemon)					\
@@ -1907,7 +1929,6 @@ r_timestamp(mousestatus_t *act)
 	struct timespec ts;
 	struct timespec ts1;
 	struct timespec ts2;
-	struct timespec ts3;
 	int button;
 	int mask;
 	int i;
@@ -1922,15 +1943,11 @@ r_timestamp(mousestatus_t *act)
 	rodent.drift.current_ts = ts1;
 
 	/* double click threshold */
-	ts2.tv_sec = rodent.clickthreshold / 1000;
-	ts2.tv_nsec = (rodent.clickthreshold % 1000) * 1000000;
-	tssub(&ts1, &ts2, &ts);
+	ts = tssubms(&ts1, rodent.clickthreshold);
 	debug("ts:  %jd %ld", (intmax_t)ts.tv_sec, ts.tv_nsec);
 
 	/* 3 button emulation timeout */
-	ts2.tv_sec = rodent.button2timeout / 1000;
-	ts2.tv_nsec = (rodent.button2timeout % 1000) * 1000000;
-	tssub(&ts1, &ts2, &ts3);
+	ts2 = tssubms(&ts1, rodent.button2timeout);
 
 	button = MOUSE_BUTTON1DOWN;
 	for (i = 0; (i < MOUSE_MAXBUTTON) && (mask != 0); ++i) {
@@ -1953,7 +1970,7 @@ r_timestamp(mousestatus_t *act)
 		} else {
 			if (act->button & button) {
 				/* the button has been down */
-				if (tscmp(&ts3, &bstate[i].ts, >)) {
+				if (tscmp(&ts2, &bstate[i].ts, >)) {
 					bstate[i].count = 1;
 					bstate[i].ts = ts1;
 					act->flags |= button;
@@ -1973,14 +1990,11 @@ r_timeout(void)
 {
 	struct timespec ts;
 	struct timespec ts1;
-	struct timespec ts2;
 
 	if (states[mouse_button_state].timeout)
 		return (true);
 	clock_gettime(CLOCK_MONOTONIC_FAST, &ts1);
-	ts2.tv_sec = rodent.button2timeout / 1000;
-	ts2.tv_nsec = (rodent.button2timeout % 1000) * 1000000;
-	tssub(&ts1, &ts2, &ts);
+	ts = tssubms(&ts1, rodent.button2timeout);
 	return (tscmp(&ts, &mouse_button_state_ts, >));
 }
 
@@ -2112,20 +2126,12 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 			gest->in_vscroll = 0;
 
 			/* Compute tap timeout. */
-			if (tap_timeout != 0) {
-				gest->taptimeout = (struct timespec) {
-					.tv_sec  = tap_timeout / 1000,
-					.tv_nsec = tap_timeout % 1000 * 1000000,
-				};
-				tsadd(&gest->taptimeout, time);
-			} else
+			if (tap_timeout != 0)
+				gest->taptimeout = tsaddms(time, tap_timeout);
+			else
 				tsclr(&gest->taptimeout);
 
-			gest->startdelay = (struct timespec) {
-				.tv_sec  = 0,
-				.tv_nsec = 25000000,
-			};
-			tsadd(&gest->startdelay, time);
+			gest->startdelay = tsaddms(time, 25);
 
 			gest->fingerdown = true;
 
@@ -2338,7 +2344,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 				 */
 				gest->in_taphold = true;
 				gest->idletimeout = syninfo.taphold_timeout;
-				tsadd(&gest->taptimeout, time);
+				gest->taptimeout = tsaddms(time, syninfo.tap_timeout);
 
 				switch (gest->fingers_nb) {
 				case 3:
