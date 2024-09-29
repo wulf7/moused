@@ -114,20 +114,9 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 #define ID_ALL		(ID_PORT | ID_TYPE | ID_MODEL)
 
 /* Operations on timespecs */
-#define	tsclr(tvp)	((tvp)->tv_sec = (tvp)->tv_nsec = 0)
-#define	tscmp(tvp, uvp, cmp)						\
-	(((tvp)->tv_sec == (uvp)->tv_sec) ?				\
-	    ((tvp)->tv_nsec cmp (uvp)->tv_nsec) :			\
-	    ((tvp)->tv_sec cmp (uvp)->tv_sec))
-#define	tssub(tvp, uvp, vvp)						\
-	do {								\
-		(vvp)->tv_sec = (tvp)->tv_sec - (uvp)->tv_sec;		\
-		(vvp)->tv_nsec = (tvp)->tv_nsec - (uvp)->tv_nsec;	\
-		if ((vvp)->tv_nsec < 0) {				\
-			(vvp)->tv_sec--;				\
-			(vvp)->tv_nsec += 1000000000;			\
-		}							\
-	} while (0)
+#define	tsclr(tvp)		timespecclear(tvp)
+#define	tscmp(tvp, uvp, cmp)	timespeccmp(tvp, uvp, cmp)
+#define	tssub(tvp, uvp, vvp)	timespecsub(tvp, uvp, vvp)
 
 /* Operations on timevals. */
 #define	tvclr(tvp)	((tvp)->tv_sec = (tvp)->tv_usec = 0)
