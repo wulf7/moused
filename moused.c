@@ -400,7 +400,7 @@ static struct button_state	zstate[4];		 /* Z/W axis state */
 #define A_TIMEOUT	4
 #define S_DELAYED(st)	(states[st].s[A_TIMEOUT] != (st))
 
-static struct {
+static const struct {
 	int s[A_TIMEOUT + 1];
 	int buttons;
 	int mask;
