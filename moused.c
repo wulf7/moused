@@ -343,45 +343,45 @@ struct drift {
 };
 
 static struct rodentparam {
-    int flags;
-    struct device dev;		/* Device */
-    struct quirks *quirks;	/* Configuration file and quirks */
-    int zmap[4];		/* MOUSE_{X|Y}AXIS or a button number */
-    int wmode;			/* wheel mode button number */
-    int mfd;			/* mouse file descriptor */
-    int cfd;			/* /dev/consolectl file descriptor */
-    long clickthreshold;	/* double click speed in msec */
-    long button2timeout;	/* 3 button emulation timeout */
-    double accelx;		/* Acceleration in the X axis */
-    double accely;		/* Acceleration in the Y axis */
-    double accelz;		/* Acceleration in the wheel axis */
-    double expoaccel;		/* Exponential acceleration */
-    double expoffset;		/* Movement offset for exponential accel. */
-    double remainx;		/* Remainder on X, Y and wheel axis, ... */
-    double remainy;		/*    ...  respectively to compensate */
-    double remainz;		/*    ... for rounding errors. */
-    int scrollthreshold;	/* Movement distance before virtual scrolling */
-    int scrollspeed;		/* Movement distance to rate of scrolling */
-    struct drift drift;
+	int flags;
+	struct device dev;	/* Device */
+	struct quirks *quirks;	/* Configuration file and quirks */
+	int zmap[4];		/* MOUSE_{X|Y}AXIS or a button number */
+	int wmode;		/* wheel mode button number */
+	int mfd;		/* mouse file descriptor */
+	int cfd;		/* /dev/consolectl file descriptor */
+	long clickthreshold;	/* double click speed in msec */
+	long button2timeout;	/* 3 button emulation timeout */
+	double accelx;		/* Acceleration in the X axis */
+	double accely;		/* Acceleration in the Y axis */
+	double accelz;		/* Acceleration in the wheel axis */
+	double expoaccel;	/* Exponential acceleration */
+	double expoffset;	/* Movement offset for exponential accel. */
+	double remainx;		/* Remainder on X, Y and wheel axis, ... */
+	double remainy;		/*    ...  respectively to compensate */
+	double remainz;		/*    ... for rounding errors. */
+	int scrollthreshold;	/* Movement distance before virtual scrolling */
+	int scrollspeed;	/* Movement distance to rate of scrolling */
+	struct drift drift;
 } rodent = {
-    .flags = 0,
-    .dev.path = NULL,
-    .dev.type = DEVICE_TYPE_UNKNOWN,
-    .quirks = NULL,
-    .zmap = { 0, 0, 0, 0 },
-    .wmode = 0,
-    .mfd = -1,
-    .cfd = -1,
-    .clickthreshold = DFLT_CLICKTHRESHOLD,
-    .button2timeout = DFLT_BUTTON2TIMEOUT,
-    .scrollthreshold = DFLT_SCROLLTHRESHOLD,
-    .scrollspeed = DFLT_SCROLLSPEED,
+	.flags = 0,
+	.dev.path = NULL,
+	.dev.type = DEVICE_TYPE_UNKNOWN,
+	.quirks = NULL,
+	.zmap = { 0, 0, 0, 0 },
+	.wmode = 0,
+	.mfd = -1,
+	.cfd = -1,
+	.clickthreshold = DFLT_CLICKTHRESHOLD,
+	.button2timeout = DFLT_BUTTON2TIMEOUT,
+	.scrollthreshold = DFLT_SCROLLTHRESHOLD,
+	.scrollspeed = DFLT_SCROLLSPEED,
 };
 
 /* button status */
 struct button_state {
-    int count;		/* 0: up, 1: single click, 2: double click,... */
-    struct timespec ts;	/* timestamp on the last button event */
+	int count;	/* 0: up, 1: single click, 2: double click,... */
+	struct timespec ts;	/* timestamp on the last button event */
 };
 static struct button_state	bstate[MOUSE_MAXBUTTON];	/* button state */
 static struct button_state	*mstate[MOUSE_MAXBUTTON];/* mapped button st.*/
@@ -405,10 +405,10 @@ static struct button_state	zstate[4];		 /* Z/W axis state */
 #define S_DELAYED(st)	(states[st].s[A_TIMEOUT] != (st))
 
 static struct {
-    int s[A_TIMEOUT + 1];
-    int buttons;
-    int mask;
-    bool timeout;
+	int s[A_TIMEOUT + 1];
+	int buttons;
+	int mask;
+	bool timeout;
 } states[10] = {
     /* S0 */
     { { S0, S2, S1, S3, S0 }, 0, ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN), false },
@@ -467,30 +467,31 @@ static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
 int
 main(int argc, char *argv[])
 {
-    int c;
-    int	i;
-    int	j;
+	int c;
+	int	i;
+	int	j;
 
-    for (i = 0; i < MOUSE_MAXBUTTON; ++i)
-	mstate[i] = &bstate[i];
+	for (i = 0; i < MOUSE_MAXBUTTON; ++i)
+		mstate[i] = &bstate[i];
 
-    while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:cdfghi:m:p:q:w:z:")) != -1)
-	switch(c) {
+	while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:cdfghi:m:p:q:w:z:"))
+	    != -1) {
+		switch(c) {
 
-	case '3':
-	    rodent.flags |= Emulate3Button;
-	    break;
+		case '3':
+			rodent.flags |= Emulate3Button;
+			break;
 
-	case 'E':
-	    rodent.button2timeout = atoi(optarg);
-	    if ((rodent.button2timeout < 0) ||
-		(rodent.button2timeout > MAX_BUTTON2TIMEOUT)) {
-		warnx("invalid argument `%s'", optarg);
-		usage();
-	    }
-	    break;
+		case 'E':
+			rodent.button2timeout = atoi(optarg);
+			if ((rodent.button2timeout < 0) ||
+			    (rodent.button2timeout > MAX_BUTTON2TIMEOUT)) {
+				warnx("invalid argument `%s'", optarg);
+				usage();
+			}
+			break;
 
-	case 'a':
+		case 'a':
 			i = sscanf(optarg, "%lf,%lf", &opt_accelx, &opt_accely);
 			if (i == 0) {
 				warnx("invalid linear acceleration argument "
@@ -501,7 +502,7 @@ main(int argc, char *argv[])
 				opt_accely = opt_accelx;
 			break;
 
-	case 'A':
+		case 'A':
 			opt_exp_accel = true;
 			i = sscanf(optarg, "%lf,%lf", &opt_expoaccel,
 			    &opt_expoffset);
@@ -514,126 +515,129 @@ main(int argc, char *argv[])
 				opt_expoffset = 1.0;
 			break;
 
-	case 'c':
-	    rodent.flags |= ChordMiddle;
-	    break;
+		case 'c':
+			rodent.flags |= ChordMiddle;
+			break;
 
-	case 'd':
-	    ++debug;
-	    break;
+		case 'd':
+			++debug;
+			break;
 
-	case 'f':
-	    nodaemon = true;
-	    break;
+		case 'f':
+			nodaemon = true;
+			break;
 
 		case 'g':
 			grab = true;
 			break;
 
-	case 'i':
-	    if (strcmp(optarg, "all") == 0)
-		identify = ID_ALL;
-	    else if (strcmp(optarg, "port") == 0)
-		identify = ID_PORT;
-	    else if (strcmp(optarg, "type") == 0)
-		identify = ID_TYPE;
-	    else if (strcmp(optarg, "model") == 0)
-		identify = ID_MODEL;
-	    else {
-		warnx("invalid argument `%s'", optarg);
-		usage();
-	    }
-	    nodaemon = true;
-	    break;
-
-	case 'm':
-	    if (!r_installmap(optarg)) {
-		warnx("invalid argument `%s'", optarg);
-		usage();
-	    }
-	    break;
-
-	case 'p':
-	    rodent.dev.path = optarg;
-	    break;
-
-	case 'w':
-	    i = atoi(optarg);
-	    if ((i <= 0) || (i > MOUSE_MAXBUTTON)) {
-		warnx("invalid argument `%s'", optarg);
-		usage();
-	    }
-	    rodent.wmode = 1 << (i - 1);
-	    break;
-
-	case 'z':
-	    if (strcmp(optarg, "x") == 0)
-		rodent.zmap[0] = MOUSE_XAXIS;
-	    else if (strcmp(optarg, "y") == 0)
-		rodent.zmap[0] = MOUSE_YAXIS;
-	    else {
-		i = atoi(optarg);
-		/*
-		 * Use button i for negative Z axis movement and
-		 * button (i + 1) for positive Z axis movement.
-		 */
-		if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
-		    warnx("invalid argument `%s'", optarg);
-		    usage();
-		}
-		rodent.zmap[0] = i;
-		rodent.zmap[1] = i + 1;
-		debug("optind: %d, optarg: '%s'", optind, optarg);
-		for (j = 1; j < 4; ++j) {
-		    if ((optind >= argc) || !isdigit(*argv[optind]))
+		case 'i':
+			if (strcmp(optarg, "all") == 0)
+				identify = ID_ALL;
+			else if (strcmp(optarg, "port") == 0)
+				identify = ID_PORT;
+			else if (strcmp(optarg, "type") == 0)
+				identify = ID_TYPE;
+			else if (strcmp(optarg, "model") == 0)
+				identify = ID_MODEL;
+			else {
+				warnx("invalid argument `%s'", optarg);
+				usage();
+			}
+			nodaemon = true;
 			break;
-		    i = atoi(argv[optind]);
-		    if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
-			warnx("invalid argument `%s'", argv[optind]);
-			usage();
-		    }
-		    rodent.zmap[j] = i;
-		    ++optind;
-		}
-		if ((rodent.zmap[2] != 0) && (rodent.zmap[3] == 0))
-		    rodent.zmap[3] = rodent.zmap[2] + 1;
-	    }
-	    break;
 
-	case 'C':
-	    rodent.clickthreshold = atoi(optarg);
-	    if ((rodent.clickthreshold < 0) ||
-		(rodent.clickthreshold > MAX_CLICKTHRESHOLD)) {
-		warnx("invalid argument `%s'", optarg);
-		usage();
-	    }
-	    break;
+		case 'm':
+			if (!r_installmap(optarg)) {
+				warnx("invalid argument `%s'", optarg);
+				usage();
+			}
+			break;
 
-	case 'H':
-	    rodent.flags |= HVirtualScroll;
-	    break;
+		case 'p':
+			rodent.dev.path = optarg;
+			break;
+
+		case 'w':
+			i = atoi(optarg);
+			if ((i <= 0) || (i > MOUSE_MAXBUTTON)) {
+				warnx("invalid argument `%s'", optarg);
+				usage();
+			}
+			rodent.wmode = 1 << (i - 1);
+			break;
+
+		case 'z':
+			if (strcmp(optarg, "x") == 0) {
+				rodent.zmap[0] = MOUSE_XAXIS;
+				break;
+			}
+			if (strcmp(optarg, "y") == 0) {
+				rodent.zmap[0] = MOUSE_YAXIS;
+				break;
+			}
+			i = atoi(optarg);
+			/*
+			 * Use button i for negative Z axis movement and
+			 * button (i + 1) for positive Z axis movement.
+			 */
+			if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
+				warnx("invalid argument `%s'", optarg);
+				usage();
+			}
+			rodent.zmap[0] = i;
+			rodent.zmap[1] = i + 1;
+			debug("optind: %d, optarg: '%s'", optind, optarg);
+			for (j = 1; j < 4; ++j) {
+				if ((optind >= argc) || !isdigit(*argv[optind]))
+					break;
+				i = atoi(argv[optind]);
+				if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
+					warnx("invalid argument `%s'",
+					    argv[optind]);
+					usage();
+				}
+				rodent.zmap[j] = i;
+				++optind;
+			}
+			if ((rodent.zmap[2] != 0) && (rodent.zmap[3] == 0))
+				rodent.zmap[3] = rodent.zmap[2] + 1;
+			break;
+
+		case 'C':
+			rodent.clickthreshold = atoi(optarg);
+			if ((rodent.clickthreshold < 0) ||
+			    (rodent.clickthreshold > MAX_CLICKTHRESHOLD)) {
+				warnx("invalid argument `%s'", optarg);
+				usage();
+			}
+			break;
+
+		case 'H':
+			rodent.flags |= HVirtualScroll;
+			break;
 		
-	case 'I':
-	    pidfile = optarg;
-	    break;
+		case 'I':
+			pidfile = optarg;
+			break;
 
-	case 'L':
-	    rodent.scrollspeed = atoi(optarg);
-	    if (rodent.scrollspeed < 0) {
-		warnx("invalid argument `%s'", optarg);
-		usage();
-	    }
-	    break;
+		case 'L':
+			rodent.scrollspeed = atoi(optarg);
+			if (rodent.scrollspeed < 0) {
+				warnx("invalid argument `%s'", optarg);
+				usage();
+			}
+			break;
 
-	case 'q':
-	    config_file = optarg;
-	    break;
+		case 'q':
+			config_file = optarg;
+			break;
 
-	case 'Q':
-	    quirks_path = optarg;
-	    break;
+		case 'Q':
+			quirks_path = optarg;
+			break;
 
-	case 'T':
+		case 'T':
 			opt_drift_terminate = true;
 			sscanf(optarg, "%u,%u,%u", &opt_drift_distance,
 			    &opt_drift_time, &opt_drift_after);
@@ -645,33 +649,35 @@ main(int argc, char *argv[])
 			}
 			break;
 
-	case 'V':
-	    rodent.flags |= VirtualScroll;
-	    break;
-	case 'U':
-	    rodent.scrollthreshold = atoi(optarg);
-	    if (rodent.scrollthreshold < 0) {
-		warnx("invalid argument `%s'", optarg);
-		usage();
-	    }
-	    break;
+		case 'V':
+			rodent.flags |= VirtualScroll;
+			break;
 
-	case 'h':
-	case '?':
-	default:
-	    usage();
+		case 'U':
+			rodent.scrollthreshold = atoi(optarg);
+			if (rodent.scrollthreshold < 0) {
+				warnx("invalid argument `%s'", optarg);
+				usage();
+			}
+			break;
+
+		case 'h':
+		case '?':
+		default:
+			usage();
+		}
 	}
 
-    /* fix Z axis mapping */
-    for (i = 0; i < 4; ++i) {
-	if (rodent.zmap[i] > 0) {
-	    for (j = 0; j < MOUSE_MAXBUTTON; ++j) {
-		if (mstate[j] == &bstate[rodent.zmap[i] - 1])
-		    mstate[j] = &zstate[i];
-	    }
-	    rodent.zmap[i] = 1 << (rodent.zmap[i] - 1);
+	/* fix Z axis mapping */
+	for (i = 0; i < 4; ++i) {
+		if (rodent.zmap[i] > 0) {
+			for (j = 0; j < MOUSE_MAXBUTTON; ++j) {
+				if (mstate[j] == &bstate[rodent.zmap[i] - 1])
+					mstate[j] = &zstate[i];
+			}
+			rodent.zmap[i] = 1 << (rodent.zmap[i] - 1);
+		}
 	}
-    }
 
 	if (rodent.dev.path == NULL) {
 		warnx("no port name specified");
