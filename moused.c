@@ -2038,6 +2038,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
     mousestatus_t *ms)
 {
 	struct gesture_state *gest = &gesture;
+	int tap_timeout = syninfo.tap_timeout;
 
 	/*
 	 * Check pressure to detect a real wanted action on the
@@ -2045,35 +2046,27 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 	 */
 	if (z >= syninfo.min_pressure_hi ||
 	    (gest->fingerdown && z >= syninfo.min_pressure_lo)) {
-		bool two_finger_scroll;
-		bool three_finger_drag;
+		/* XXX Verify values? */
+		bool two_finger_scroll = syninfo.two_finger_scroll;
+		bool three_finger_drag = syninfo.three_finger_drag;
+		int max_width = syninfo.max_width;
+		int max_pressure = syninfo.max_pressure;
+		int margin_top = syninfo.margin_top;
+		int margin_right = syninfo.margin_right;
+		int margin_bottom = syninfo.margin_bottom;
+		int margin_left = syninfo.margin_left;
+		int vscroll_hor_area = syninfo.vscroll_hor_area * synhw.res_x;
+		int vscroll_ver_area = syninfo.vscroll_ver_area * synhw.res_y;;
+
+		int max_x = synhw.max_x;
+		int max_y = synhw.max_y;
+		int min_x = synhw.min_x;
+		int min_y = synhw.min_y;
+
 		int dx, dy;
 		int start_x, start_y;
-		int max_width, max_pressure;
-		int margin_top, margin_right, margin_bottom, margin_left;
-		int vscroll_hor_area, vscroll_ver_area;
-		int max_x, max_y, min_x, min_y;
 		int tap_max_delta_x, tap_max_delta_y;
-		int tap_timeout;
 		int prev_nfingers;
-
-		/* XXX Verify values? */
-		two_finger_scroll = syninfo.two_finger_scroll;
-		three_finger_drag = syninfo.three_finger_drag;
-		max_width = syninfo.max_width;
-		max_pressure = syninfo.max_pressure;
-		margin_top = syninfo.margin_top;
-		margin_right = syninfo.margin_right;
-		margin_bottom = syninfo.margin_bottom;
-		margin_left = syninfo.margin_left;
-		vscroll_hor_area = syninfo.vscroll_hor_area * synhw.res_x;
-		vscroll_ver_area = syninfo.vscroll_ver_area * synhw.res_y;;
-		tap_timeout = syninfo.tap_timeout;
-
-		max_x = synhw.max_x;
-		max_y = synhw.max_y;
-		min_x = synhw.min_x;
-		min_y = synhw.min_y;
 
 		/* Palm detection. */
 		if (nfingers == 1 &&
@@ -2344,7 +2337,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 				 */
 				gest->in_taphold = true;
 				gest->idletimeout = syninfo.taphold_timeout;
-				gest->taptimeout = tsaddms(time, syninfo.tap_timeout);
+				gest->taptimeout = tsaddms(time, tap_timeout);
 
 				switch (gest->fingers_nb) {
 				case 3:
