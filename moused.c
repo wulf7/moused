@@ -1293,7 +1293,6 @@ r_init_touchpad(void)
 	int i;
 	u_int u;
 	int sz_x, sz_y;
-	int hi, lo;
 
 	quirks_get_bool(q, MOUSED_TWO_FINGER_SCROLL, &syninfo.two_finger_scroll);
 	quirks_get_bool(q, MOUSED_NATURAL_SCROLL, &syninfo.natural_scroll);
@@ -1337,28 +1336,22 @@ r_init_touchpad(void)
 	    ioctl(rodent.mfd, EVIOCGABS(ABS_PRESSURE), &ai) >= 0) {
 		synhw.cap_pressure = true;
 		if (quirks_get_range(q, QUIRK_ATTR_PRESSURE_RANGE, &r)) {
-			hi = r.upper;
-			lo = r.lower;
-			syninfo.tap_threshold = r.upper;
-			if (hi == 0 && lo == 0) {
+			if (r.upper == 0 && r.lower == 0) {
 				debug("pressure-based touch detection disabled");
 				synhw.cap_pressure = false;
+			} else {
+				syninfo.min_pressure = r.lower;
+				syninfo.tap_threshold = r.upper;
 			}
-		} else {
-			u_int range = ai.maximum - ai.minimum;
-			/* Approximately the synaptics defaults */
-			hi = ai.minimum + 0.12 * range;
-			lo = ai.minimum + 0.10 * range;
-			syninfo.tap_threshold = ai.minimum + 0.17 * range;
 		}
-		if (hi > ai.maximum || hi < ai.minimum ||
-		    lo > ai.maximum || lo < ai.minimum) {
+		if (syninfo.min_pressure > ai.maximum ||
+		    syninfo.min_pressure < ai.minimum ||
+		    syninfo.tap_threshold > ai.maximum ||
+		    syninfo.tap_threshold < ai.minimum) {
 			debug("discarding out-of-bounds pressure range %d:%d",
-			hi, lo);
+			syninfo.tap_threshold, syninfo.min_pressure);
 			synhw.cap_pressure = false;
 		}
-		if (synhw.cap_pressure)
-			syninfo.min_pressure = lo;
 		quirks_get_uint32(q, QUIRK_ATTR_PALM_PRESSURE_THRESHOLD,
 		    &syninfo.max_pressure);
 		quirks_get_uint32(q, MOUSED_TAP_PRESSURE_THRESHOLD,
