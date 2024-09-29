@@ -243,7 +243,8 @@ static struct tpinfo {
 	bool	two_finger_scroll;	/* Enable two finger scrolling */
 	bool	natural_scroll;		/* Enable natural scrolling */
 	bool	three_finger_drag;	/* Enable dragging with three fingers */
-	u_int	min_pressure;		/* Min pressure to start an action */
+	u_int	min_pressure_hi;	/* Min pressure to start an action */
+	u_int	min_pressure_lo;	/* Min pressure to continue an action */
 	u_int	max_pressure;		/* Maximum pressure to detect palm */
 	u_int	max_width;		/* Max finger width to detect palm */
 	int	margin_top;		/* Top margin */
@@ -264,7 +265,8 @@ static struct tpinfo {
 	.two_finger_scroll = true,
 	.natural_scroll = false,
 	.three_finger_drag = false,
-	.min_pressure = 1,
+	.min_pressure_hi = 1,
+	.min_pressure_lo = 1,
 	.max_pressure = 130,
 	.max_width = 16,
 	.tap_timeout = 180,		/* ms */
@@ -1340,16 +1342,16 @@ r_init_touchpad(void)
 				debug("pressure-based touch detection disabled");
 				synhw.cap_pressure = false;
 			} else {
-				syninfo.min_pressure = r.lower;
-				syninfo.tap_threshold = r.upper;
+				syninfo.min_pressure_lo = r.lower;
+				syninfo.min_pressure_hi = r.upper;
 			}
 		}
-		if (syninfo.min_pressure > ai.maximum ||
-		    syninfo.min_pressure < ai.minimum ||
-		    syninfo.tap_threshold > ai.maximum ||
-		    syninfo.tap_threshold < ai.minimum) {
+		if (syninfo.min_pressure_hi > ai.maximum ||
+		    syninfo.min_pressure_hi < ai.minimum ||
+		    syninfo.min_pressure_lo > ai.maximum ||
+		    syninfo.min_pressure_lo < ai.minimum) {
 			debug("discarding out-of-bounds pressure range %d:%d",
-			syninfo.tap_threshold, syninfo.min_pressure);
+			    syninfo.min_pressure_hi, syninfo.min_pressure_lo);
 			synhw.cap_pressure = false;
 		}
 		quirks_get_uint32(q, QUIRK_ATTR_PALM_PRESSURE_THRESHOLD,
@@ -1599,7 +1601,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	 */
 
 	if (!synhw.cap_pressure && ev.st.id != 0)
-		ev.st.p = MAX(syninfo.min_pressure, syninfo.tap_threshold);
+		ev.st.p = MAX(syninfo.min_pressure_hi, syninfo.tap_threshold);
 	if (synhw.cap_touch && ev.st.id == 0)
 		ev.st.p = 0;
 
@@ -2040,7 +2042,8 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timeval *time,
 	 * Check pressure to detect a real wanted action on the
 	 * touchpad.
 	 */
-	if (z >= syninfo.min_pressure) {
+	if (z >= syninfo.min_pressure_hi ||
+	    (gest->fingerdown && z >= syninfo.min_pressure_lo)) {
 		bool two_finger_scroll;
 		bool three_finger_drag;
 		int dx, dy;
