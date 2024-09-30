@@ -452,6 +452,7 @@ static const char *r_name(int type);
 static int	r_init(const char *path);
 static int	r_protocol(struct input_event *b, mousestatus_t *act);
 static void	r_vscroll_detect(mousestatus_t *act);
+static void	r_vscroll(mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
 static bool	r_installmap(char *arg);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
@@ -952,60 +953,7 @@ moused(void)
 		 * If *only* the middle button is pressed AND we are moving
 		 * the stick/trackpoint/nipple, scroll!
 		 */
-		if (scroll.state == SCROLL_PREPARE) {
-			/* Middle button down, waiting for movement threshold */
-			if (action2.dy || action2.dx) {
-				if (rodent.flags & VirtualScroll) {
-					scroll.movement += action2.dy;
-					if (scroll.movement < -rodent.scrollthreshold) {
-						scroll.state = SCROLL_SCROLLING;
-					} else if (scroll.movement > rodent.scrollthreshold) {
-						scroll.state = SCROLL_SCROLLING;
-					}
-				}
-				if (rodent.flags & HVirtualScroll) {
-					scroll.hmovement += action2.dx;
-					if (scroll.hmovement < -rodent.scrollthreshold) {
-						scroll.state = SCROLL_SCROLLING;
-					} else if (scroll.hmovement > rodent.scrollthreshold) {
-						scroll.state = SCROLL_SCROLLING;
-					}
-				}
-				if (scroll.state == SCROLL_SCROLLING)
-					scroll.movement = scroll.hmovement = 0;
-			}
-		} else if (scroll.state == SCROLL_SCROLLING) {
-			 if (rodent.flags & VirtualScroll) {
-				 scroll.movement += action2.dy;
-				 debug("SCROLL: %d", scroll.movement);
-			    if (scroll.movement < -rodent.scrollspeed) {
-				/* Scroll down */
-				action2.dz = -1;
-				scroll.movement = 0;
-			    }
-			    else if (scroll.movement > rodent.scrollspeed) {
-				/* Scroll up */
-				action2.dz = 1;
-				scroll.movement = 0;
-			    }
-			 }
-			 if (rodent.flags & HVirtualScroll) {
-				 scroll.hmovement += action2.dx;
-				 debug("HORIZONTAL SCROLL: %d", scroll.hmovement);
-
-				 if (scroll.hmovement < -rodent.scrollspeed) {
-					 action2.dz = -2;
-					 scroll.hmovement = 0;
-				 }
-				 else if (scroll.hmovement > rodent.scrollspeed) {
-					 action2.dz = 2;
-					 scroll.movement = 0;
-				 }
-			 }
-
-		    /* Don't move while scrolling */
-		    action2.dx = action2.dy = 0;
-		}
+		r_vscroll(&action2);
 	    }
 
 		if (rodent.drift.terminate) {
@@ -1737,6 +1685,65 @@ r_vscroll_detect(mousestatus_t *act)
 			newaction.button = act->button;
 			r_click(&newaction);
 		}
+	}
+}
+
+static void
+r_vscroll(mousestatus_t *act)
+{
+	if (scroll.state == SCROLL_PREPARE) {
+		/* Middle button down, waiting for movement threshold */
+		if (act->dy || act->dx) {
+			if (rodent.flags & VirtualScroll) {
+				scroll.movement += act->dy;
+				if (scroll.movement < -rodent.scrollthreshold) {
+					scroll.state = SCROLL_SCROLLING;
+				} else if (scroll.movement > rodent.scrollthreshold) {
+					scroll.state = SCROLL_SCROLLING;
+				}
+			}
+			if (rodent.flags & HVirtualScroll) {
+				scroll.hmovement += act->dx;
+				if (scroll.hmovement < -rodent.scrollthreshold) {
+					scroll.state = SCROLL_SCROLLING;
+				} else if (scroll.hmovement > rodent.scrollthreshold) {
+					scroll.state = SCROLL_SCROLLING;
+				}
+			}
+			if (scroll.state == SCROLL_SCROLLING)
+				scroll.movement = scroll.hmovement = 0;
+		}
+	} else if (scroll.state == SCROLL_SCROLLING) {
+		if (rodent.flags & VirtualScroll) {
+			scroll.movement += act->dy;
+			debug("SCROLL: %d", scroll.movement);
+			if (scroll.movement < -rodent.scrollspeed) {
+				/* Scroll down */
+				act->dz = -1;
+				scroll.movement = 0;
+			}
+			else if (scroll.movement > rodent.scrollspeed) {
+				/* Scroll up */
+				act->dz = 1;
+				scroll.movement = 0;
+			}
+		}
+		if (rodent.flags & HVirtualScroll) {
+			scroll.hmovement += act->dx;
+			debug("HORIZONTAL SCROLL: %d", scroll.hmovement);
+
+			if (scroll.hmovement < -rodent.scrollspeed) {
+				act->dz = -2;
+				scroll.hmovement = 0;
+			}
+			else if (scroll.hmovement > rodent.scrollspeed) {
+				act->dz = 2;
+				scroll.movement = 0;
+			}
+		}
+
+		/* Don't move while scrolling */
+		act->dx = act->dy = 0;
 	}
 }
 
