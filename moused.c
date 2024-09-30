@@ -447,7 +447,7 @@ static void	usage(void);
 static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 		    __printflike(3, 4);
 
-static enum device_type	r_identify(int fd, struct device *dev);
+static enum device_type	r_identify(int fd);
 static const char *r_name(int type);
 static int	r_init(const char *path);
 static int	r_protocol(struct input_event *b, mousestatus_t *act);
@@ -1169,8 +1169,9 @@ bit_find(bitstr_t *array, int start, int stop)
 
 /* Derived from EvdevProbe() function of xf86-input-evdev driver */
 static enum device_type
-r_identify(int fd, struct device *dev)
+r_identify(int fd)
 {
+	enum device_type type;
 	bitstr_t bit_decl(key_bits, KEY_CNT); /* */
 	bitstr_t bit_decl(rel_bits, REL_CNT); /* Evdev capabilities */
 	bitstr_t bit_decl(abs_bits, ABS_CNT); /* */
@@ -1179,20 +1180,12 @@ r_identify(int fd, struct device *dev)
 	bool has_mt;
 
 	/* maybe this is a evdev mouse... */
-	if (ioctl(fd, EVIOCGNAME(sizeof(dev->name) - 1), dev->name) < 0 ||
-	    ioctl(fd, EVIOCGID, &dev->id) < 0 ||
-	    ioctl(fd, EVIOCGBIT(EV_REL, sizeof(rel_bits)), rel_bits) < 0 ||
+	if (ioctl(fd, EVIOCGBIT(EV_REL, sizeof(rel_bits)), rel_bits) < 0 ||
 	    ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits) < 0 ||
 	    ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) < 0 ||
 	    ioctl(fd, EVIOCGPROP(sizeof(prop_bits)), prop_bits) < 0) {
 		return (DEVICE_TYPE_UNKNOWN);
 	}
-
-	/* Do not loop events */
-	if (strncmp(dev->name, "System mouse", sizeof(dev->name)) == 0)
-		return (DEVICE_TYPE_UNKNOWN);
-
-	(void)ioctl(fd, EVIOCGUNIQ(sizeof(dev->uniq) - 1), dev->uniq);
 
 	has_keys = bit_find(key_bits, 0, BTN_MISC - 1);
 	has_buttons = bit_find(key_bits, BTN_MISC, BTN_JOYSTICK - 1);
@@ -1200,7 +1193,7 @@ r_identify(int fd, struct device *dev)
 	has_rel_axes = bit_find(rel_bits, 0, REL_MAX);
 	has_abs_axes = bit_find(abs_bits, 0, ABS_MAX);
 	has_mt = bit_find(abs_bits, ABS_MT_SLOT, ABS_MAX);
-	dev->type = DEVICE_TYPE_UNKNOWN;
+	type = DEVICE_TYPE_UNKNOWN;
 
 	if (has_abs_axes) {
 		if (has_mt && !has_buttons) {
@@ -1217,32 +1210,32 @@ r_identify(int fd, struct device *dev)
 			if (bit_test(key_bits, BTN_TOOL_PEN) ||
 			    bit_test(key_bits, BTN_STYLUS) ||
 			    bit_test(key_bits, BTN_STYLUS2)) {
-				dev->type = DEVICE_TYPE_TABLET;;
+				type = DEVICE_TYPE_TABLET;
 			} else if (bit_test(abs_bits, ABS_PRESSURE) ||
 				   bit_test(key_bits, BTN_TOUCH)) {
 				if (has_lmr ||
 				    bit_test(key_bits, BTN_TOOL_FINGER)) {
-					dev->type = DEVICE_TYPE_TOUCHPAD;
+					type = DEVICE_TYPE_TOUCHPAD;
 				} else {
-					dev->type = DEVICE_TYPE_TOUCHSCREEN;
+					type = DEVICE_TYPE_TOUCHSCREEN;
 				}
 			/* some touchscreens use BTN_LEFT rather than BTN_TOUCH */
 			} else if (!(bit_test(rel_bits, REL_X) &&
 				     bit_test(rel_bits, REL_Y)) &&
 				     has_lmr) {
-				dev->type = DEVICE_TYPE_TOUCHSCREEN;
+				type = DEVICE_TYPE_TOUCHSCREEN;
 			}
 		}
 	}
 
-	if (dev->type == DEVICE_TYPE_UNKNOWN) {
+	if (type == DEVICE_TYPE_UNKNOWN) {
 		if (has_keys)
-			dev->type = DEVICE_TYPE_KEYBOARD;
+			type = DEVICE_TYPE_KEYBOARD;
 		else if (has_rel_axes || has_buttons)
-			dev->type = DEVICE_TYPE_MOUSE;
+			type = DEVICE_TYPE_MOUSE;
 	}
 
-	return (dev->type);
+	return (type);
 }
 
 static const char *
@@ -1434,6 +1427,7 @@ r_init_accel(void)
 static int
 r_init(const char *path)
 {
+	struct device *dev = &rodent.dev;
 	enum device_type type;
 	int fd;
 
@@ -1443,7 +1437,7 @@ r_init(const char *path)
 		return (-errno);
 	}
 
-	switch (type = r_identify(fd, &rodent.dev)){
+	switch (type = r_identify(fd)) {
 	case DEVICE_TYPE_UNKNOWN:
 		debug("cannot determine device type on %s", path);
 		close(fd);
@@ -1464,10 +1458,28 @@ r_init(const char *path)
 		return (-errno);
 	}
 
-	rodent.mfd = fd;
-	rodent.dev.path = path;
-	rodent.quirks = quirks_fetch_for_device(quirks, &rodent.dev);
+	dev->path = path;
+	dev->type = type;
+	if (ioctl(fd, EVIOCGNAME(sizeof(dev->name) - 1), dev->name) < 0) {
+		logwarnx("unable to get device %s name", path);
+		close(fd);
+		return (-errno);
+	}
+	/* Do not loop events */
+	if (strncmp(dev->name, "System mouse", sizeof(dev->name)) == 0) {
+		close(fd);
+		return (-ENOTSUP);
+	}
+	if (ioctl(fd, EVIOCGID, &dev->id) < 0) {
+		logwarnx("unable to get device %s ID", path);
+		close(fd);
+		return (-errno);
+	}
+	(void)ioctl(fd, EVIOCGUNIQ(sizeof(dev->uniq) - 1), dev->uniq);
 
+	rodent.quirks = quirks_fetch_for_device(quirks, dev);
+
+	rodent.mfd = fd;
 	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
 		r_init_accel();
@@ -1486,8 +1498,7 @@ r_init(const char *path)
 
 	quirks_unref(rodent.quirks);
 
-	debug("port: %s  type: %s  model: %s",
-	    rodent.dev.path, r_name(rodent.dev.type), rodent.dev.name);
+	debug("port: %s  type: %s  model: %s", path, r_name(type), dev->name);
 
 	return (fd);
 }
