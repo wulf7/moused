@@ -48,7 +48,7 @@ enum device_type {
 };
 
 struct device {
-	char *path;
+	const char *path;
 	enum device_type type;
 	char name[80];
 	char uniq[80];

@@ -180,6 +180,7 @@ static bool	background = false;
 static bool	paused = false;
 static bool	grab = false;
 static int	identify = ID_NONE;
+static const char *devpath = NULL;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
 static const char *config_file = CONFSDIR "/moused.conf";
@@ -448,7 +449,7 @@ static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 
 static enum device_type	r_identify(int fd, struct device *dev);
 static const char *r_name(int type);
-static void	r_init(void);
+static int	r_init(const char *path);
 static int	r_protocol(struct input_event *b, mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
 static bool	r_installmap(char *arg);
@@ -552,7 +553,7 @@ main(int argc, char *argv[])
 			break;
 
 		case 'p':
-			rodent.dev.path = optarg;
+			devpath = optarg;
 			break;
 
 		case 'w':
@@ -676,7 +677,7 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (rodent.dev.path == NULL) {
+	if (devpath == NULL) {
 		warnx("no port name specified");
 		usage();
 	}
@@ -686,7 +687,6 @@ main(int argc, char *argv[])
 
 	switch (setjmp(env)) {
 	case SIGHUP:
-		quirks_unref(rodent.quirks);
 		quirks_context_unref(quirks);
 		close(rodent.mfd);
 		/* FALLTHROUGH */
@@ -707,35 +707,14 @@ main(int argc, char *argv[])
 	signal(SIGTERM, reset);
 	signal(SIGUSR1, pause_mouse);
 
-	rodent.mfd = open(rodent.dev.path, O_RDWR | O_NONBLOCK);
-	if (rodent.mfd == -1) {
-		logerr(1, "unable to open %s", rodent.dev.path);
-		goto out;
-	}
-
 	quirks = quirks_init_subsystem(quirks_path, config_file,
 	    log_or_warn_va,
 	    background ? QLOG_MOUSED_LOGGING : QLOG_CUSTOM_LOG_PRIORITIES);
 	if (quirks == NULL)
 		logwarnx("cannot open configuration file %s", config_file);
 
-	switch (r_identify(rodent.mfd, &rodent.dev)){
-	case DEVICE_TYPE_UNKNOWN:
-		debug("cannot determine device type on %s", rodent.dev.path);
-		goto out;
-	case DEVICE_TYPE_MOUSE:
-	case DEVICE_TYPE_TOUCHPAD:
-		break;
-	default:
-		debug("unsupported device type: %s on %s",
-		    r_name(rodent.dev.type), rodent.dev.path);
-		goto out;
-	}
-
-	if (grab && ioctl(rodent.mfd, EVIOCGRAB, 1) == -1) {
-		logwarnx("unable to grab %s", rodent.dev.path);
-		goto out;
-	}
+	if ((rodent.mfd = r_init(devpath)) < 0)
+		logerrx(1, "Can not initialize device");
 
 	/* print some information */
 	if (identify != ID_NONE) {
@@ -749,14 +728,7 @@ main(int argc, char *argv[])
 		else if (identify & ID_MODEL)
 			printf("%s\n", rodent.dev.name);
 		exit(0);
-	} else {
-		debug("port: %s  type: %s  model: %s",
-		    rodent.dev.path, r_name(rodent.dev.type), rodent.dev.name);
 	}
-
-	rodent.quirks = quirks_fetch_for_device(quirks, &rodent.dev);
-
-	r_init();			/* call init function */
 
 	if (!nodaemon && !background) {
 		pfh = pidfile_open(pidfile, 0600, &mpid);
@@ -777,8 +749,6 @@ main(int argc, char *argv[])
 	}
 
 	moused();
-
-	quirks_unref(rodent.quirks);
 
 out:
 	quirks_context_unref(quirks);
@@ -1461,10 +1431,44 @@ r_init_accel(void)
 		rodent.flags |= ExponentialAcc;
 }
 
-static void
-r_init(void)
+static int
+r_init(const char *path)
 {
-	switch (rodent.dev.type) {
+	enum device_type type;
+	int fd;
+
+	fd = open(path, O_RDWR | O_NONBLOCK);
+	if (fd == -1) {
+		logwarnx("unable to open %s", path);
+		return (-errno);
+	}
+
+	switch (type = r_identify(fd, &rodent.dev)){
+	case DEVICE_TYPE_UNKNOWN:
+		debug("cannot determine device type on %s", path);
+		close(fd);
+		return (-ENOTSUP);
+	case DEVICE_TYPE_MOUSE:
+	case DEVICE_TYPE_TOUCHPAD:
+		break;
+	default:
+		debug("unsupported device type: %s on %s",
+		    r_name(type), path);
+		close(fd);
+		return (-ENXIO);
+	}
+
+	if (grab && ioctl(fd, EVIOCGRAB, 1) == -1) {
+		logwarnx("unable to grab %s", path);
+		close(fd);
+		return (-errno);
+	}
+
+	rodent.mfd = fd;
+	rodent.dev.path = path;
+	rodent.quirks = quirks_fetch_for_device(quirks, &rodent.dev);
+
+	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
 		r_init_accel();
 		r_init_touchpad();
@@ -1479,6 +1483,13 @@ r_init(void)
 //		debug("unsupported evdev type: %s", r_name(rodent.dev.type));
 		break;
 	}
+
+	quirks_unref(rodent.quirks);
+
+	debug("port: %s  type: %s  model: %s",
+	    rodent.dev.path, r_name(rodent.dev.type), rodent.dev.name);
+
+	return (fd);
 }
 
 static int
