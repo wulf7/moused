@@ -1636,7 +1636,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 
 	act->obutton = act->button;
 	act->button = butmapev[ev.buttons & MOUSE_SYS_STDBUTTONS];
-	act->button |= (ev.buttons & MOUSE_SYS_EXTBUTTONS);
+	act->button |= (ev.buttons & ~MOUSE_SYS_STDBUTTONS);
 
 	/* Convert cumulative to average movement in MT case */
 	if (synhw.is_mt) {
