@@ -451,6 +451,7 @@ static enum device_type	r_identify(int fd);
 static const char *r_name(int type);
 static int	r_init(const char *path);
 static int	r_protocol(struct input_event *b, mousestatus_t *act);
+static void	r_vscroll_detect(mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
 static bool	r_installmap(char *arg);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
@@ -919,47 +920,14 @@ moused(void)
 		continue;
 
 	    if ((rodent.flags & VirtualScroll) || (rodent.flags & HVirtualScroll)) {
-		/* Allow middle button drags to scroll up and down */
 		if (action0.button == MOUSE_BUTTON2DOWN) {
-		    if (scroll.state == SCROLL_NOTSCROLLING) {
-			scroll.state = SCROLL_PREPARE;
-			scroll.movement = scroll.hmovement = 0;
-			debug("PREPARING TO SCROLL");
-		    }
-		    debug("[BUTTON2] flags:%08x buttons:%08x obuttons:%08x",
-			  action.flags, action.button, action.obutton);
+			debug("[BUTTON2] flags:%08x buttons:%08x obuttons:%08x",
+			    action.flags, action.button, action.obutton);
 		} else {
-		    debug("[NOTBUTTON2] flags:%08x buttons:%08x obuttons:%08x",
-			  action.flags, action.button, action.obutton);
-
-		    /* This isn't a middle button down... move along... */
-		    if (scroll.state == SCROLL_SCROLLING) {
-			/*
-			 * We were scrolling, someone let go of button 2.
-			 * Now turn autoscroll off.
-			 */
-			scroll.state = SCROLL_NOTSCROLLING;
-			debug("DONE WITH SCROLLING / %d", scroll.state);
-		    } else if (scroll.state == SCROLL_PREPARE) {
-			mousestatus_t newaction = action0;
-
-			/* We were preparing to scroll, but we never moved... */
-			r_timestamp(&action0);
-			r_statetrans(&action0, &newaction,
-				     A(newaction.button & MOUSE_BUTTON1DOWN,
-				       action0.button & MOUSE_BUTTON3DOWN));
-
-			/* Send middle down */
-			newaction.button = MOUSE_BUTTON2DOWN;
-			r_click(&newaction);
-
-			/* Send middle up */
-			r_timestamp(&newaction);
-			newaction.obutton = newaction.button;
-			newaction.button = action0.button;
-			r_click(&newaction);
-		    }
+			debug("[NOTBUTTON2] flags:%08x buttons:%08x obuttons:%08x",
+			    action.flags, action.button, action.obutton);
 		}
+		r_vscroll_detect(&action0);
 	    }
 
 	    r_timestamp(&action0);
@@ -1727,6 +1695,49 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	    | (act->obutton ^ act->button);
 
 	return (act->flags);
+}
+
+static void
+r_vscroll_detect(mousestatus_t *act)
+{
+	mousestatus_t newaction;
+
+	/* Allow middle button drags to scroll up and down */
+	if (act->button == MOUSE_BUTTON2DOWN) {
+		if (scroll.state == SCROLL_NOTSCROLLING) {
+			scroll.state = SCROLL_PREPARE;
+			scroll.movement = scroll.hmovement = 0;
+			debug("PREPARING TO SCROLL");
+		}
+	} else {
+		/* This isn't a middle button down... move along... */
+		if (scroll.state == SCROLL_SCROLLING) {
+			/*
+			 * We were scrolling, someone let go of button 2.
+			 * Now turn autoscroll off.
+			 */
+			scroll.state = SCROLL_NOTSCROLLING;
+			debug("DONE WITH SCROLLING / %d", scroll.state);
+		} else if (scroll.state == SCROLL_PREPARE) {
+			newaction = *act;
+
+			/* We were preparing to scroll, but we never moved... */
+			r_timestamp(act);
+			r_statetrans(act, &newaction,
+				     A(newaction.button & MOUSE_BUTTON1DOWN,
+				       act->button & MOUSE_BUTTON3DOWN));
+
+			/* Send middle down */
+			newaction.button = MOUSE_BUTTON2DOWN;
+			r_click(&newaction);
+
+			/* Send middle up */
+			r_timestamp(&newaction);
+			newaction.obutton = newaction.button;
+			newaction.button = act->button;
+			r_click(&newaction);
+		}
+	}
 }
 
 static bool
