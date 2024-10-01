@@ -199,10 +199,6 @@ static bool	opt_exp_accel = false;
 static double	opt_expoaccel = 1.0;
 static double	opt_expoffset = 1.0;
 
-#define SCROLL_NOTSCROLLING	0
-#define SCROLL_PREPARE		1
-#define SCROLL_SCROLLING	2
-
 /* local variables */
 
 /* types (the table must be ordered by DEVICE_TYPE_XXX in util.h) */
@@ -314,10 +310,16 @@ static struct evdev_state {
 	struct finger	mt[MAX_FINGERS];
 } ev;
 
+enum scroll_state {
+	SCROLL_NOTSCROLLING,
+	SCROLL_PREPARE,
+	SCROLL_SCROLLING,
+};
+
 struct scroll {
 	int	threshold;	/* Movement distance before virtual scrolling */
 	int	speed;		/* Movement distance to rate of scrolling */
-	int	state;
+	enum scroll_state state;
 	int	movement;
 	int	hmovement;
 };
@@ -1670,34 +1672,40 @@ r_vscroll_detect(mousestatus_t *act)
 			sc->movement = sc->hmovement = 0;
 			debug("PREPARING TO SCROLL");
 		}
-	} else {
-		/* This isn't a middle button down... move along... */
-		if (sc->state == SCROLL_SCROLLING) {
-			/*
-			 * We were scrolling, someone let go of button 2.
-			 * Now turn autoscroll off.
-			 */
-			sc->state = SCROLL_NOTSCROLLING;
-			debug("DONE WITH SCROLLING / %d", sc->state);
-		} else if (sc->state == SCROLL_PREPARE) {
-			newaction = *act;
+		return;
+	}
 
-			/* We were preparing to scroll, but we never moved... */
-			r_timestamp(act);
-			r_statetrans(act, &newaction,
-				     A(newaction.button & MOUSE_BUTTON1DOWN,
-				       act->button & MOUSE_BUTTON3DOWN));
+	/* This isn't a middle button down... move along... */
+	switch (sc->state) {
+	case SCROLL_SCROLLING:
+		/*
+		 * We were scrolling, someone let go of button 2.
+		 * Now turn autoscroll off.
+		 */
+		sc->state = SCROLL_NOTSCROLLING;
+		debug("DONE WITH SCROLLING / %d", sc->state);
+		break;
+	case SCROLL_PREPARE:
+		newaction = *act;
 
-			/* Send middle down */
-			newaction.button = MOUSE_BUTTON2DOWN;
-			r_click(&newaction);
+		/* We were preparing to scroll, but we never moved... */
+		r_timestamp(act);
+		r_statetrans(act, &newaction,
+			     A(newaction.button & MOUSE_BUTTON1DOWN,
+			       act->button & MOUSE_BUTTON3DOWN));
 
-			/* Send middle up */
-			r_timestamp(&newaction);
-			newaction.obutton = newaction.button;
-			newaction.button = act->button;
-			r_click(&newaction);
-		}
+		/* Send middle down */
+		newaction.button = MOUSE_BUTTON2DOWN;
+		r_click(&newaction);
+
+		/* Send middle up */
+		r_timestamp(&newaction);
+		newaction.obutton = newaction.button;
+		newaction.button = act->button;
+		r_click(&newaction);
+		break;
+	default:
+		break;
 	}
 }
 
@@ -1706,29 +1714,31 @@ r_vscroll(mousestatus_t *act)
 {
 	struct scroll *sc = &rodent.scroll;
 
-	if (sc->state == SCROLL_PREPARE) {
+	switch (sc->state) {
+	case SCROLL_PREPARE:
 		/* Middle button down, waiting for movement threshold */
-		if (act->dy || act->dx) {
-			if (rodent.flags & VirtualScroll) {
-				sc->movement += act->dy;
-				if (sc->movement < -sc->threshold) {
-					sc->state = SCROLL_SCROLLING;
-				} else if (sc->movement > sc->threshold) {
-					sc->state = SCROLL_SCROLLING;
-				}
+		if (act->dy == 0 && act->dx == 0)
+			break;
+		if (rodent.flags & VirtualScroll) {
+			sc->movement += act->dy;
+			if (sc->movement < -sc->threshold) {
+				sc->state = SCROLL_SCROLLING;
+			} else if (sc->movement > sc->threshold) {
+				sc->state = SCROLL_SCROLLING;
 			}
-			if (rodent.flags & HVirtualScroll) {
-				sc->hmovement += act->dx;
-				if (sc->hmovement < -sc->threshold) {
-					sc->state = SCROLL_SCROLLING;
-				} else if (sc->hmovement > sc->threshold) {
-					sc->state = SCROLL_SCROLLING;
-				}
-			}
-			if (sc->state == SCROLL_SCROLLING)
-				sc->movement = sc->hmovement = 0;
 		}
-	} else if (sc->state == SCROLL_SCROLLING) {
+		if (rodent.flags & HVirtualScroll) {
+			sc->hmovement += act->dx;
+			if (sc->hmovement < -sc->threshold) {
+				sc->state = SCROLL_SCROLLING;
+			} else if (sc->hmovement > sc->threshold) {
+				sc->state = SCROLL_SCROLLING;
+			}
+		}
+		if (sc->state == SCROLL_SCROLLING)
+			sc->movement = sc->hmovement = 0;
+		break;
+	case SCROLL_SCROLLING:
 		if (rodent.flags & VirtualScroll) {
 			sc->movement += act->dy;
 			debug("SCROLL: %d", sc->movement);
@@ -1759,6 +1769,9 @@ r_vscroll(mousestatus_t *act)
 
 		/* Don't move while scrolling */
 		act->dx = act->dy = 0;
+		break;
+	default:
+		break;
 	}
 }
 
