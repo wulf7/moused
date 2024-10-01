@@ -100,8 +100,6 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 
 #define	ChordMiddle	0x0001
 #define Emulate3Button	0x0002
-#define VirtualScroll	0x0020
-#define HVirtualScroll	0x0040
 
 #define	MAX_FINGERS	10
 
@@ -198,6 +196,9 @@ static double	opt_accely = 1.0;
 static bool	opt_exp_accel = false;
 static double	opt_expoaccel = 1.0;
 static double	opt_expoffset = 1.0;
+
+static bool	opt_virtual_scroll = false;
+static bool	opt_hvirtual_scroll = false;
 
 /* local variables */
 
@@ -626,7 +627,7 @@ main(int argc, char *argv[])
 			break;
 
 		case 'H':
-			rodent.flags |= HVirtualScroll;
+			opt_hvirtual_scroll = true;
 			break;
 		
 		case 'I':
@@ -662,7 +663,7 @@ main(int argc, char *argv[])
 			break;
 
 		case 'V':
-			rodent.flags |= VirtualScroll;
+			opt_virtual_scroll = true;
 			break;
 
 		case 'U':
@@ -935,7 +936,7 @@ moused(void)
 	    if ((flags = r_protocol(&b, &action0)) == 0)
 		continue;
 
-	    if ((rodent.flags & VirtualScroll) || (rodent.flags & HVirtualScroll)) {
+	    if (opt_virtual_scroll || opt_hvirtual_scroll) {
 		if (action0.button == MOUSE_BUTTON2DOWN) {
 			debug("[BUTTON2] flags:%08x buttons:%08x obuttons:%08x",
 			    action.flags, action.button, action.obutton);
@@ -963,7 +964,7 @@ moused(void)
 	    debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
 		action2.button, action2.dx, action2.dy, action2.dz);
 
-	    if ((rodent.flags & VirtualScroll) || (rodent.flags & HVirtualScroll)) {
+	    if (opt_virtual_scroll || opt_hvirtual_scroll) {
 		/*
 		 * If *only* the middle button is pressed AND we are moving
 		 * the stick/trackpoint/nipple, scroll!
@@ -1719,7 +1720,7 @@ r_vscroll(mousestatus_t *act)
 		/* Middle button down, waiting for movement threshold */
 		if (act->dy == 0 && act->dx == 0)
 			break;
-		if (rodent.flags & VirtualScroll) {
+		if (opt_virtual_scroll) {
 			sc->movement += act->dy;
 			if (sc->movement < -sc->threshold) {
 				sc->state = SCROLL_SCROLLING;
@@ -1727,7 +1728,7 @@ r_vscroll(mousestatus_t *act)
 				sc->state = SCROLL_SCROLLING;
 			}
 		}
-		if (rodent.flags & HVirtualScroll) {
+		if (opt_hvirtual_scroll) {
 			sc->hmovement += act->dx;
 			if (sc->hmovement < -sc->threshold) {
 				sc->state = SCROLL_SCROLLING;
@@ -1739,7 +1740,7 @@ r_vscroll(mousestatus_t *act)
 			sc->movement = sc->hmovement = 0;
 		break;
 	case SCROLL_SCROLLING:
-		if (rodent.flags & VirtualScroll) {
+		if (opt_virtual_scroll) {
 			sc->movement += act->dy;
 			debug("SCROLL: %d", sc->movement);
 			if (sc->movement < -sc->speed) {
@@ -1753,7 +1754,7 @@ r_vscroll(mousestatus_t *act)
 				sc->movement = 0;
 			}
 		}
-		if (rodent.flags & HVirtualScroll) {
+		if (opt_hvirtual_scroll) {
 			sc->hmovement += act->dx;
 			debug("HORIZONTAL SCROLL: %d", sc->hmovement);
 
