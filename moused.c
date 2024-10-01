@@ -117,13 +117,16 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 #define	tsclr(tvp)		timespecclear(tvp)
 #define	tscmp(tvp, uvp, cmp)	timespeccmp(tvp, uvp, cmp)
 #define	tssub(tvp, uvp, vvp)	timespecsub(tvp, uvp, vvp)
+#define	msec2ts(msec)	(struct timespec) {			\
+	.tv_sec = (msec) / 1000,				\
+	.tv_nsec = (msec) % 1000 * 1000000,			\
+}
 static inline struct timespec
 tsaddms(struct timespec* tsp, u_int ms)
 {
 	struct timespec ret;
 
-	ret.tv_sec = ms / 1000;
-	ret.tv_nsec = ms % 1000 * 1000000;
+	ret = msec2ts(ms);
 	timespecadd(tsp, &ret, &ret);
 
 	return (ret);
@@ -134,8 +137,7 @@ tssubms(struct timespec* tsp, u_int ms)
 {
 	struct timespec ret;
 
-	ret.tv_sec = ms / 1000;
-	ret.tv_nsec = ms % 1000 * 1000000;
+	ret = msec2ts(ms);
 	timespecsub(tsp, &ret, &ret);
 
 	return (ret);
@@ -1305,12 +1307,9 @@ r_init_drift(void)
 	debug("terminate drift: distance %d, time %d, after %d",
 	    d->distance, d->time, d->after);
 
-	d->time_ts.tv_sec = d->time / 1000;
-	d->time_ts.tv_nsec = (d->time % 1000) * 1000000;
-	d->twotime_ts.tv_sec = (d->time *= 2) / 1000;
-	d->twotime_ts.tv_nsec = (d->time % 1000) * 1000000;
-	d->after_ts.tv_sec = d->after / 1000;
-	d->after_ts.tv_nsec = (d->after % 1000) * 1000000;
+	d->time_ts = msec2ts(d->time);
+	d->twotime_ts = msec2ts(d->time * 2);
+	d->after_ts = msec2ts(d->after);
 }
 
 static void
