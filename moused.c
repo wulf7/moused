@@ -315,6 +315,8 @@ static struct evdev_state {
 } ev;
 
 struct scroll {
+	int	threshold;	/* Movement distance before virtual scrolling */
+	int	speed;		/* Movement distance to rate of scrolling */
 	int	state;
 	int	movement;
 	int	hmovement;
@@ -363,8 +365,6 @@ static struct rodentparam {
 	int cfd;		/* /dev/consolectl file descriptor */
 	long clickthreshold;	/* double click speed in msec */
 	long button2timeout;	/* 3 button emulation timeout */
-	int scrollthreshold;	/* Movement distance before virtual scrolling */
-	int scrollspeed;	/* Movement distance to rate of scrolling */
 	struct drift drift;
 	struct accel accel;	/* cursor acceleration state */
 	struct scroll scroll;	/* virtual scroll state */
@@ -379,8 +379,10 @@ static struct rodentparam {
 	.cfd = -1,
 	.clickthreshold = DFLT_CLICKTHRESHOLD,
 	.button2timeout = DFLT_BUTTON2TIMEOUT,
-	.scrollthreshold = DFLT_SCROLLTHRESHOLD,
-	.scrollspeed = DFLT_SCROLLSPEED,
+	.scroll = {
+		.threshold = DFLT_SCROLLTHRESHOLD,
+		.speed = DFLT_SCROLLSPEED,
+	},
 };
 
 /* button status */
@@ -630,8 +632,8 @@ main(int argc, char *argv[])
 			break;
 
 		case 'L':
-			rodent.scrollspeed = atoi(optarg);
-			if (rodent.scrollspeed < 0) {
+			rodent.scroll.speed = atoi(optarg);
+			if (rodent.scroll.speed < 0) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
@@ -662,8 +664,8 @@ main(int argc, char *argv[])
 			break;
 
 		case 'U':
-			rodent.scrollthreshold = atoi(optarg);
-			if (rodent.scrollthreshold < 0) {
+			rodent.scroll.threshold = atoi(optarg);
+			if (rodent.scroll.threshold < 0) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
@@ -1709,17 +1711,17 @@ r_vscroll(mousestatus_t *act)
 		if (act->dy || act->dx) {
 			if (rodent.flags & VirtualScroll) {
 				sc->movement += act->dy;
-				if (sc->movement < -rodent.scrollthreshold) {
+				if (sc->movement < -sc->threshold) {
 					sc->state = SCROLL_SCROLLING;
-				} else if (sc->movement > rodent.scrollthreshold) {
+				} else if (sc->movement > sc->threshold) {
 					sc->state = SCROLL_SCROLLING;
 				}
 			}
 			if (rodent.flags & HVirtualScroll) {
 				sc->hmovement += act->dx;
-				if (sc->hmovement < -rodent.scrollthreshold) {
+				if (sc->hmovement < -sc->threshold) {
 					sc->state = SCROLL_SCROLLING;
-				} else if (sc->hmovement > rodent.scrollthreshold) {
+				} else if (sc->hmovement > sc->threshold) {
 					sc->state = SCROLL_SCROLLING;
 				}
 			}
@@ -1730,12 +1732,12 @@ r_vscroll(mousestatus_t *act)
 		if (rodent.flags & VirtualScroll) {
 			sc->movement += act->dy;
 			debug("SCROLL: %d", sc->movement);
-			if (sc->movement < -rodent.scrollspeed) {
+			if (sc->movement < -sc->speed) {
 				/* Scroll down */
 				act->dz = -1;
 				sc->movement = 0;
 			}
-			else if (sc->movement > rodent.scrollspeed) {
+			else if (sc->movement > sc->speed) {
 				/* Scroll up */
 				act->dz = 1;
 				sc->movement = 0;
@@ -1745,11 +1747,11 @@ r_vscroll(mousestatus_t *act)
 			sc->hmovement += act->dx;
 			debug("HORIZONTAL SCROLL: %d", sc->hmovement);
 
-			if (sc->hmovement < -rodent.scrollspeed) {
+			if (sc->hmovement < -sc->speed) {
 				act->dz = -2;
 				sc->hmovement = 0;
 			}
-			else if (sc->hmovement > rodent.scrollspeed) {
+			else if (sc->hmovement > sc->speed) {
 				act->dz = 2;
 				sc->hmovement = 0;
 			}
