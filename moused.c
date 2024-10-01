@@ -102,7 +102,6 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 #define Emulate3Button	0x0002
 #define VirtualScroll	0x0020
 #define HVirtualScroll	0x0040
-#define ExponentialAcc	0x0080
 
 #define	MAX_FINGERS	10
 
@@ -341,6 +340,18 @@ struct drift {
 	struct drift_xy	previous;	/* steps in prev. drift_time */
 };
 
+struct accel {
+	bool is_exponential;	/* Exponential acceleration is enabled */
+	double accelx;		/* Acceleration in the X axis */
+	double accely;		/* Acceleration in the Y axis */
+	double accelz;		/* Acceleration in the wheel axis */
+	double expoaccel;	/* Exponential acceleration */
+	double expoffset;	/* Movement offset for exponential accel. */
+	double remainx;		/* Remainder on X, Y and wheel axis, ... */
+	double remainy;		/*    ...  respectively to compensate */
+	double remainz;		/*    ... for rounding errors. */
+};
+
 static struct rodentparam {
 	int flags;
 	struct device dev;	/* Device */
@@ -351,17 +362,10 @@ static struct rodentparam {
 	int cfd;		/* /dev/consolectl file descriptor */
 	long clickthreshold;	/* double click speed in msec */
 	long button2timeout;	/* 3 button emulation timeout */
-	double accelx;		/* Acceleration in the X axis */
-	double accely;		/* Acceleration in the Y axis */
-	double accelz;		/* Acceleration in the wheel axis */
-	double expoaccel;	/* Exponential acceleration */
-	double expoffset;	/* Movement offset for exponential accel. */
-	double remainx;		/* Remainder on X, Y and wheel axis, ... */
-	double remainy;		/*    ...  respectively to compensate */
-	double remainz;		/*    ... for rounding errors. */
 	int scrollthreshold;	/* Movement distance before virtual scrolling */
 	int scrollspeed;	/* Movement distance to rate of scrolling */
 	struct drift drift;
+	struct accel accel;	/* cursor acceleration state */
 } rodent = {
 	.flags = 0,
 	.dev.path = NULL,
@@ -776,21 +780,22 @@ out:
 static void
 linacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 {
+	struct accel *acc = &rodent.accel;
 	double fdx, fdy, fdz;
 
 	if (dx == 0 && dy == 0 && dz == 0) {
 		*movex = *movey = *movez = 0;
 		return;
 	}
-	fdx = dx * rodent.accelx + rodent.remainx;
-	fdy = dy * rodent.accely + rodent.remainy;
-	fdz = dz * rodent.accelz + rodent.remainz;
+	fdx = dx * acc->accelx + acc->remainx;
+	fdy = dy * acc->accely + acc->remainy;
+	fdz = dz * acc->accelz + acc->remainz;
 	*movex = lround(fdx);
 	*movey = lround(fdy);
 	*movez = lround(fdz);
-	rodent.remainx = fdx - *movex;
-	rodent.remainy = fdy - *movey;
-	rodent.remainz = fdz - *movez;
+	acc->remainx = fdx - *movex;
+	acc->remainy = fdy - *movey;
+	acc->remainz = fdz - *movez;
 }
 
 /*
@@ -805,6 +810,7 @@ linacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 static void
 expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 {
+	struct accel *acc = &rodent.accel;
 	static double lastlength[3] = {0.0, 0.0, 0.0};
 	double fdx, fdy, fdz, length, lbase, accel;
 
@@ -812,21 +818,21 @@ expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 		*movex = *movey = *movez = 0;
 		return;
 	}
-	fdx = dx * rodent.accelx;
-	fdy = dy * rodent.accely;
-	fdz = dz * rodent.accelz;
+	fdx = dx * acc->accelx;
+	fdy = dy * acc->accely;
+	fdz = dz * acc->accelz;
 	length = sqrt((fdx * fdx) + (fdy * fdy));	/* Pythagoras */
 	length = (length + lastlength[0] + lastlength[1] + lastlength[2]) / 4;
-	lbase = length / rodent.expoffset;
-	accel = pow(lbase, rodent.expoaccel) / lbase;
-	fdx = fdx * accel + rodent.remainx;
-	fdy = fdy * accel + rodent.remainy;
+	lbase = length / acc->expoffset;
+	accel = pow(lbase, acc->expoaccel) / lbase;
+	fdx = fdx * accel + acc->remainx;
+	fdy = fdy * accel + acc->remainy;
 	*movex = lround(fdx);
 	*movey = lround(fdy);
 	*movez = lround(fdz);
-	rodent.remainx = fdx - *movex;
-	rodent.remainy = fdy - *movey;
-	rodent.remainz = fdz - *movez;
+	acc->remainx = fdx - *movex;
+	acc->remainy = fdy - *movey;
+	acc->remainz = fdz - *movez;
 	lastlength[2] = lastlength[1];
 	lastlength[1] = lastlength[0];
 	lastlength[0] = length;	/* Insert new average, not original length! */
@@ -976,7 +982,7 @@ moused(void)
 		if (action2.flags & MOUSE_POSCHANGED) {
 			mouse.operation = MOUSE_MOTION_EVENT;
 			mouse.u.data.buttons = action2.button;
-			if (rodent.flags & ExponentialAcc) {
+			if (rodent.accel.is_exponential) {
 				expoacc(action2.dx, action2.dy, action2.dz,
 				    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
 			} else {
@@ -1272,12 +1278,12 @@ r_init_touchpad(void)
 		syninfo.softbutton3_x = sz_x * u / 100;
 	}
 	/* Normalize pointer movement to match 200dpi mouse */
-	rodent.accelx *= DFLT_MOUSE_RESOLUTION;
-	rodent.accelx /= synhw.res_x;
-	rodent.accely *= DFLT_MOUSE_RESOLUTION;
-	rodent.accely /= synhw.res_y;
-	rodent.accelz *= DFLT_MOUSE_RESOLUTION;
-	rodent.accelz /= (synhw.res_x * DFLT_LINEHEIGHT);
+	rodent.accel.accelx *= DFLT_MOUSE_RESOLUTION;
+	rodent.accel.accelx /= synhw.res_x;
+	rodent.accel.accely *= DFLT_MOUSE_RESOLUTION;
+	rodent.accel.accely /= synhw.res_y;
+	rodent.accel.accelz *= DFLT_MOUSE_RESOLUTION;
+	rodent.accel.accelz /= (synhw.res_x * DFLT_LINEHEIGHT);
 }
 
 static void
@@ -1316,27 +1322,28 @@ static void
 r_init_accel(void)
 {
 	struct quirks *q = rodent.quirks;
+	struct accel *acc = &rodent.accel;
 	bool r1, r2;
 
-	rodent.accelx = opt_accelx;
+	acc->accelx = opt_accelx;
 	if (opt_accelx == 1.0)
-		 quirks_get_double(q, MOUSED_LINEAR_ACCEL_X, &rodent.accelx);
-	rodent.accely = opt_accely;
+		 quirks_get_double(q, MOUSED_LINEAR_ACCEL_X, &acc->accelx);
+	acc->accely = opt_accely;
 	if (opt_accely == 1.0)
-		 quirks_get_double(q, MOUSED_LINEAR_ACCEL_Y, &rodent.accely);
-	if (!quirks_get_double(q, MOUSED_LINEAR_ACCEL_Z, &rodent.accelz))
-		rodent.accelz = 1.0;
+		 quirks_get_double(q, MOUSED_LINEAR_ACCEL_Y, &acc->accely);
+	if (!quirks_get_double(q, MOUSED_LINEAR_ACCEL_Z, &acc->accelz))
+		acc->accelz = 1.0;
 	if (opt_exp_accel) {
-		rodent.flags |= ExponentialAcc;
-		rodent.expoaccel = opt_expoaccel;
-		rodent.expoffset = opt_expoffset;
+		acc->is_exponential = true;
+		acc->expoaccel = opt_expoaccel;
+		acc->expoffset = opt_expoffset;
 		return;
 	}
-	rodent.expoaccel = rodent.expoffset = 1.0;
-	r1 = quirks_get_double(q, MOUSED_EXPONENTIAL_ACCEL, &rodent.expoaccel);
-	r2 = quirks_get_double(q, MOUSED_EXPONENTIAL_OFFSET, &rodent.expoffset);
+	acc->expoaccel = acc->expoffset = 1.0;
+	r1 = quirks_get_double(q, MOUSED_EXPONENTIAL_ACCEL, &acc->expoaccel);
+	r2 = quirks_get_double(q, MOUSED_EXPONENTIAL_OFFSET, &acc->expoffset);
 	if (r1 || r2)
-		rodent.flags |= ExponentialAcc;
+		acc->is_exponential = true;
 }
 
 static int
