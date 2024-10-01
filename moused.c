@@ -350,6 +350,7 @@ struct accel {
 	double remainx;		/* Remainder on X, Y and wheel axis, ... */
 	double remainy;		/*    ...  respectively to compensate */
 	double remainz;		/*    ... for rounding errors. */
+	double lastlength[3];
 };
 
 static struct rodentparam {
@@ -811,7 +812,6 @@ static void
 expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 {
 	struct accel *acc = &rodent.accel;
-	static double lastlength[3] = {0.0, 0.0, 0.0};
 	double fdx, fdy, fdz, length, lbase, accel;
 
 	if (dx == 0 && dy == 0 && dz == 0) {
@@ -822,7 +822,8 @@ expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 	fdy = dy * acc->accely;
 	fdz = dz * acc->accelz;
 	length = sqrt((fdx * fdx) + (fdy * fdy));	/* Pythagoras */
-	length = (length + lastlength[0] + lastlength[1] + lastlength[2]) / 4;
+	length = (length + acc->lastlength[0] + acc->lastlength[1] +
+	    acc->lastlength[2]) / 4;
 	lbase = length / acc->expoffset;
 	accel = pow(lbase, acc->expoaccel) / lbase;
 	fdx = fdx * accel + acc->remainx;
@@ -833,9 +834,10 @@ expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 	acc->remainx = fdx - *movex;
 	acc->remainy = fdy - *movey;
 	acc->remainz = fdz - *movez;
-	lastlength[2] = lastlength[1];
-	lastlength[1] = lastlength[0];
-	lastlength[0] = length;	/* Insert new average, not original length! */
+	acc->lastlength[2] = acc->lastlength[1];
+	acc->lastlength[1] = acc->lastlength[0];
+	/* Insert new average, not original length! */
+	acc->lastlength[0] = length;
 }
 
 static void
@@ -1333,6 +1335,7 @@ r_init_accel(void)
 		 quirks_get_double(q, MOUSED_LINEAR_ACCEL_Y, &acc->accely);
 	if (!quirks_get_double(q, MOUSED_LINEAR_ACCEL_Z, &acc->accelz))
 		acc->accelz = 1.0;
+	acc->lastlength[0] = acc->lastlength[1] = acc->lastlength[2] = 0.0;
 	if (opt_exp_accel) {
 		acc->is_exponential = true;
 		acc->expoaccel = opt_expoaccel;
