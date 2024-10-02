@@ -680,17 +680,6 @@ main(int argc, char *argv[])
 		}
 	}
 
-	/* fix Z axis mapping */
-	for (i = 0; i < 4; ++i) {
-		if (rodent.zmap[i] > 0) {
-			for (j = 0; j < MOUSE_MAXBUTTON; ++j) {
-				if (mstate[j] == &bstate[rodent.zmap[i] - 1])
-					mstate[j] = &zstate[i];
-			}
-			rodent.zmap[i] = 1 << (rodent.zmap[i] - 1);
-		}
-	}
-
 	if (devpath == NULL) {
 		warnx("no port name specified");
 		usage();
@@ -865,18 +854,6 @@ moused(void)
     bzero(&action, sizeof(action));
     bzero(&action2, sizeof(action2));
     bzero(&mouse, sizeof(mouse));
-    mouse_button_state = S0;
-    clock_gettime(CLOCK_MONOTONIC_FAST, &mouse_button_state_ts);
-    mouse_move_delayed = 0;
-    for (i = 0; i < MOUSE_MAXBUTTON; ++i) {
-	bstate[i].count = 0;
-	bstate[i].ts = mouse_button_state_ts;
-    }
-    for (i = 0; i < (int)(sizeof(zstate) / sizeof(zstate[0])); ++i) {
-	zstate[i].count = 0;
-	zstate[i].ts = mouse_button_state_ts;
-    }
-
     /* process mouse data */
     for (;;) {
 
@@ -1180,6 +1157,35 @@ r_name(int type)
 }
 
 static void
+r_init_buttons(void)
+{
+	int i, j;
+
+	/* fix Z axis mapping */
+	for (i = 0; i < 4; ++i) {
+		if (rodent.zmap[i] > 0) {
+			for (j = 0; j < MOUSE_MAXBUTTON; ++j) {
+				if (mstate[j] == &bstate[rodent.zmap[i] - 1])
+					mstate[j] = &zstate[i];
+			}
+			rodent.zmap[i] = 1 << (rodent.zmap[i] - 1);
+		}
+	}
+
+	mouse_button_state = S0;
+	clock_gettime(CLOCK_MONOTONIC_FAST, &mouse_button_state_ts);
+	mouse_move_delayed = 0;
+	for (i = 0; i < MOUSE_MAXBUTTON; ++i) {
+		bstate[i].count = 0;
+		bstate[i].ts = mouse_button_state_ts;
+	}
+	for (i = 0; i < (int)(sizeof(zstate) / sizeof(zstate[0])); ++i) {
+		zstate[i].count = 0;
+		zstate[i].ts = mouse_button_state_ts;
+	}
+}
+
+static void
 r_init_touchpad(void)
 {
 	struct input_absinfo ai;
@@ -1410,6 +1416,7 @@ r_init(const char *path)
 	rodent.quirks = quirks_fetch_for_device(quirks, dev);
 
 	rodent.mfd = fd;
+	r_init_buttons();
 	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
 		r_init_accel();
