@@ -398,23 +398,25 @@ static struct button_state	zstate[4];		 /* Z/W axis state */
 
 /* state machine for 3 button emulation */
 
-#define S0	0	/* start */
-#define S1	1	/* button 1 delayed down */
-#define S2	2	/* button 3 delayed down */
-#define S3	3	/* both buttons down -> button 2 down */
-#define S4	4	/* button 1 delayed up */
-#define S5	5	/* button 1 down */
-#define S6	6	/* button 3 down */
-#define S7	7	/* both buttons down */
-#define S8	8	/* button 3 delayed up */
-#define S9	9	/* button 1 or 3 up after S3 */
+enum bt3_emul_state {
+	S0,		/* start */
+	S1,		/* button 1 delayed down */
+	S2,		/* button 3 delayed down */
+	S3,		/* both buttons down -> button 2 down */
+	S4,		/* button 1 delayed up */
+	S5,		/* button 1 down */
+	S6,		/* button 3 down */
+	S7,		/* both buttons down */
+	S8,		/* button 3 delayed up */
+	S9,		/* button 1 or 3 up after S3 */
+};
 
 #define A(b1, b3)	(((b1) ? 2 : 0) | ((b3) ? 1 : 0))
 #define A_TIMEOUT	4
 #define S_DELAYED(st)	(states[st].s[A_TIMEOUT] != (st))
 
 static const struct {
-	int s[A_TIMEOUT + 1];
+	enum bt3_emul_state s[A_TIMEOUT + 1];
 	int buttons;
 	int mask;
 	bool timeout;
@@ -440,7 +442,7 @@ static const struct {
     /* S9 */
     { { S0, S9, S9, S3, S9 }, 0, ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN), false },
 };
-static int		mouse_button_state;
+static enum bt3_emul_state	mouse_button_state;
 static struct timespec	mouse_button_state_ts;
 static int		mouse_move_delayed;
 
