@@ -338,7 +338,6 @@ struct drift {
 	struct timespec	after_ts;
 	bool		terminate;
 	struct timespec	current_ts;
-	struct timespec	tmp;
 	struct timespec	last_activity;
 	struct timespec	since;
 	struct drift_xy	last;		/* steps in last drift_time */
@@ -1779,16 +1778,18 @@ r_vscroll(mousestatus_t *act)
 static bool
 r_drift (struct drift *drift, mousestatus_t *act)
 {
+	struct timespec tmp;
+
 	/* X or/and Y movement only - possibly drift */
-	tssub(&drift->current_ts, &drift->last_activity, &drift->tmp);
-	if (tscmp(&drift->tmp, &drift->after_ts, >)) {
-		tssub(&drift->current_ts, &drift->since, &drift->tmp);
-		if (tscmp(&drift->tmp, &drift->time_ts, <)) {
+	tssub(&drift->current_ts, &drift->last_activity, &tmp);
+	if (tscmp(&tmp, &drift->after_ts, >)) {
+		tssub(&drift->current_ts, &drift->since, &tmp);
+		if (tscmp(&tmp, &drift->time_ts, <)) {
 			drift->last.x += act->dx;
 			drift->last.y += act->dy;
 		} else {
 			/* discard old accumulated steps (drift) */
-			if (tscmp(&drift->tmp, &drift->twotime_ts, >))
+			if (tscmp(&tmp, &drift->twotime_ts, >))
 				drift->previous.x = drift->previous.y = 0;
 			else
 				drift->previous = drift->last;
