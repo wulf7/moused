@@ -204,7 +204,7 @@ static const char *rnames[] = {
 	[DEVICE_TYPE_JOYSTICK]		= "joystick",
 };
 
-static struct tpcaps {
+struct tpcaps {
 	bool	is_clickpad;
 	bool	is_mt;
 	bool	cap_touch;
@@ -216,7 +216,7 @@ static struct tpcaps {
 	int	max_y;
 	int	res_x;	/* dots per mm */
 	int	res_y;	/* dots per mm */
-} synhw;
+};
 
 static struct tpinfo {
 	bool	two_finger_scroll;	/* Enable two finger scrolling */
@@ -360,6 +360,7 @@ static struct rodentparam {
 	struct drift drift;
 	struct accel accel;	/* cursor acceleration state */
 	struct scroll scroll;	/* virtual scroll state */
+	struct tpcaps tphw;	/* touchpad capabilities */
 } rodent = {
 	.flags = 0,
 	.dev.path = NULL,
@@ -1184,6 +1185,7 @@ r_init_touchpad(void)
 	bitstr_t bit_decl(key_bits, KEY_CNT);
 	bitstr_t bit_decl(abs_bits, ABS_CNT);
 	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
+	struct tpcaps *tphw = &rodent.tphw;
 	struct quirks *q = rodent.quirks;
 	struct quirk_range r;
 	struct quirk_dimensions dim;
@@ -1205,37 +1207,37 @@ r_init_touchpad(void)
 	ioctl(rodent.mfd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits);
 
 	if (ioctl(rodent.mfd, EVIOCGABS(ABS_X), &ai) >= 0) {
-		synhw.min_x = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
-		synhw.max_x = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
+		tphw->min_x = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
+		tphw->max_x = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
 		sz_x = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
-		synhw.res_x = ai.resolution == 0 ?
+		tphw->res_x = ai.resolution == 0 ?
 		    DFLT_TPAD_RESOLUTION : ai.resolution;
 	}
 	if (ioctl(rodent.mfd, EVIOCGABS(ABS_Y), &ai) >= 0) {
-		synhw.min_y = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
-		synhw.max_y = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
+		tphw->min_y = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
+		tphw->max_y = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
 		sz_y = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
-		synhw.res_y = ai.resolution == 0 ?
+		tphw->res_y = ai.resolution == 0 ?
 		    DFLT_TPAD_RESOLUTION : ai.resolution;
 	}
 	if (quirks_get_dimensions(q, QUIRK_ATTR_RESOLUTION_HINT, &dim)) {
-		synhw.res_x = dim.x;
-		synhw.res_y = dim.y;
-	} else if (synhw.max_x != INT_MAX && synhw.max_y != INT_MAX &&
+		tphw->res_x = dim.x;
+		tphw->res_y = dim.y;
+	} else if (tphw->max_x != INT_MAX && tphw->max_y != INT_MAX &&
 		   quirks_get_dimensions(q, QUIRK_ATTR_SIZE_HINT, &dim)) {
-		synhw.res_x = (synhw.max_x - synhw.min_x) / dim.x;
-		synhw.res_y = (synhw.max_y - synhw.min_y) / dim.y;
+		tphw->res_x = (tphw->max_x - tphw->min_x) / dim.x;
+		tphw->res_y = (tphw->max_y - tphw->min_y) / dim.y;
 	}
 	if (bit_test(key_bits, BTN_TOUCH))
-		synhw.cap_touch = true;
+		tphw->cap_touch = true;
 	/* XXX: libinput uses ABS_MT_PRESSURE where available */
 	if (bit_test(abs_bits, ABS_PRESSURE) &&
 	    ioctl(rodent.mfd, EVIOCGABS(ABS_PRESSURE), &ai) >= 0) {
-		synhw.cap_pressure = true;
+		tphw->cap_pressure = true;
 		if (quirks_get_range(q, QUIRK_ATTR_PRESSURE_RANGE, &r)) {
 			if (r.upper == 0 && r.lower == 0) {
 				debug("pressure-based touch detection disabled");
-				synhw.cap_pressure = false;
+				tphw->cap_pressure = false;
 			} else {
 				syninfo.min_pressure_lo = r.lower;
 				syninfo.min_pressure_hi = r.upper;
@@ -1247,7 +1249,7 @@ r_init_touchpad(void)
 		    syninfo.min_pressure_lo < ai.minimum) {
 			debug("discarding out-of-bounds pressure range %d:%d",
 			    syninfo.min_pressure_hi, syninfo.min_pressure_lo);
-			synhw.cap_pressure = false;
+			tphw->cap_pressure = false;
 		}
 		quirks_get_uint32(q, QUIRK_ATTR_PALM_PRESSURE_THRESHOLD,
 		    &syninfo.max_pressure);
@@ -1258,18 +1260,18 @@ r_init_touchpad(void)
 	if (bit_test(abs_bits, ABS_TOOL_WIDTH) &&
 	    quirks_get_uint32(q, QUIRK_ATTR_PALM_SIZE_THRESHOLD,
 	     &syninfo.max_width) && syninfo.max_width != 0)
-		synhw.cap_width = true;
+		tphw->cap_width = true;
 	if (bit_test(abs_bits, ABS_MT_SLOT) &&
 	    bit_test(abs_bits, ABS_MT_TRACKING_ID) &&
 	    bit_test(abs_bits, ABS_MT_POSITION_X) &&
 	    bit_test(abs_bits, ABS_MT_POSITION_Y))
-		synhw.is_mt = true;
+		tphw->is_mt = true;
 	if (ioctl(rodent.mfd, EVIOCGPROP(sizeof(prop_bits)), prop_bits) >= 0) {
 		if (bit_test(prop_bits, INPUT_PROP_BUTTONPAD))
-			synhw.is_clickpad = true;
+			tphw->is_clickpad = true;
 	}
 	/* Set bottom quarter as 42% - 16% - 42% sized softbuttons */
-	if (synhw.is_clickpad) {
+	if (tphw->is_clickpad) {
 		i = 25;
 		quirks_get_int32(q, MOUSED_SOFTBUTTONS_Y, &i);
 		syninfo.softbuttons_y = sz_y * i / 100;
@@ -1284,11 +1286,11 @@ r_init_touchpad(void)
 	}
 	/* Normalize pointer movement to match 200dpi mouse */
 	rodent.accel.accelx *= DFLT_MOUSE_RESOLUTION;
-	rodent.accel.accelx /= synhw.res_x;
+	rodent.accel.accelx /= tphw->res_x;
 	rodent.accel.accely *= DFLT_MOUSE_RESOLUTION;
-	rodent.accel.accely /= synhw.res_y;
+	rodent.accel.accely /= tphw->res_y;
 	rodent.accel.accelz *= DFLT_MOUSE_RESOLUTION;
-	rodent.accel.accelz /= (synhw.res_x * DFLT_LINEHEIGHT);
+	rodent.accel.accelz /= (tphw->res_x * DFLT_LINEHEIGHT);
 }
 
 static void
@@ -1435,6 +1437,8 @@ r_init(const char *path)
 static int
 r_protocol(struct input_event *ie, mousestatus_t *act)
 {
+	struct tpcaps *tphw = &rodent.tphw;
+
 	static int butmapev[8] = {	/* evdev */
 	    0,
 	    MOUSE_BUTTON1DOWN,
@@ -1472,12 +1476,12 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	case EV_ABS:
 		switch (ie->code) {
 		case ABS_X:
-			if (!synhw.is_mt)
+			if (!tphw->is_mt)
 				ev.dx += ie->value - ev.st.x;
 			ev.st.x = ie->value;
 			break;
 		case ABS_Y:
-			if (!synhw.is_mt)
+			if (!tphw->is_mt)
 				ev.dy += ie->value - ev.st.y;
 			ev.st.y = ie->value;
 			break;
@@ -1488,11 +1492,11 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 			ev.st.w = ie->value;
 			break;
 		case ABS_MT_SLOT:
-			if (synhw.is_mt)
+			if (tphw->is_mt)
 				ev.slot = ie->value;
 			break;
 		case ABS_MT_TRACKING_ID:
-			if (synhw.is_mt &&
+			if (tphw->is_mt &&
 			    ev.slot >= 0 && ev.slot < MAX_FINGERS) {
 				if (ie->value != -1 && ev.mt[ev.slot].id > 0 &&
 				    ie->value + 1 != ev.mt[ev.slot].id) {
@@ -1504,14 +1508,14 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 			}
 			break;
 		case ABS_MT_POSITION_X:
-			if (synhw.is_mt &&
+			if (tphw->is_mt &&
 			    ev.slot >= 0 && ev.slot < MAX_FINGERS) {
 				ev.dx += ie->value - ev.mt[ev.slot].x;
 				ev.mt[ev.slot].x = ie->value;
 			}
 			break;
 		case ABS_MT_POSITION_Y:
-			if (synhw.is_mt &&
+			if (tphw->is_mt &&
 			    ev.slot >= 0 && ev.slot < MAX_FINGERS) {
 				ev.dy += ie->value - ev.mt[ev.slot].y;
 				ev.mt[ev.slot].y = ie->value;
@@ -1558,9 +1562,9 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	ietime.tv_sec = ie->time.tv_sec;
 	ietime.tv_nsec = ie->time.tv_usec * 1000;
 
-	if (!synhw.cap_pressure && ev.st.id != 0)
+	if (!tphw->cap_pressure && ev.st.id != 0)
 		ev.st.p = MAX(syninfo.min_pressure_hi, syninfo.tap_threshold);
-	if (synhw.cap_touch && ev.st.id == 0)
+	if (tphw->cap_touch && ev.st.id == 0)
 		ev.st.p = 0;
 
 	act->obutton = act->button;
@@ -1568,13 +1572,13 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	act->button |= (ev.buttons & ~MOUSE_SYS_STDBUTTONS);
 
 	/* Convert cumulative to average movement in MT case */
-	if (synhw.is_mt) {
+	if (tphw->is_mt) {
 		active = 0;
 		for (i = 0; i < MAX_FINGERS; i++)
 			if (ev.mt[i].id != 0)
 				active++;
 		/* Do not count finger holding a click as active */
-		if (synhw.is_clickpad && ev.buttons != 0)
+		if (tphw->is_clickpad && ev.buttons != 0)
 			active--;
 		if (active > 1) {
 			/* XXX: We should dynamically update rodent.accel */
@@ -2108,6 +2112,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
     mousestatus_t *ms)
 {
 	struct gesture_state *gest = &gesture;
+	struct tpcaps *tphw = &rodent.tphw;
 	int tap_timeout = syninfo.tap_timeout;
 
 	/*
@@ -2125,13 +2130,13 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 		int margin_right = syninfo.margin_right;
 		int margin_bottom = syninfo.margin_bottom;
 		int margin_left = syninfo.margin_left;
-		int vscroll_hor_area = syninfo.vscroll_hor_area * synhw.res_x;
-		int vscroll_ver_area = syninfo.vscroll_ver_area * synhw.res_y;;
+		int vscroll_hor_area = syninfo.vscroll_hor_area * tphw->res_x;
+		int vscroll_ver_area = syninfo.vscroll_ver_area * tphw->res_y;;
 
-		int max_x = synhw.max_x;
-		int max_y = synhw.max_y;
-		int min_x = synhw.min_x;
-		int min_y = synhw.min_y;
+		int max_x = tphw->max_x;
+		int max_y = tphw->max_y;
+		int min_x = tphw->min_x;
+		int min_y = tphw->min_y;
 
 		int dx, dy;
 		int start_x, start_y;
@@ -2140,8 +2145,8 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 
 		/* Palm detection. */
 		if (nfingers == 1 &&
-		    ((synhw.cap_width && w > max_width) ||
-		     (synhw.cap_pressure && z > max_pressure))) {
+		    ((tphw->cap_width && w > max_width) ||
+		     (tphw->cap_pressure && z > max_pressure))) {
 			/*
 			 * We consider the packet irrelevant for the current
 			 * action when:
@@ -2212,7 +2217,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 		start_y = gest->start_y;
 
 		/* Process ClickPad softbuttons */
-		if (synhw.is_clickpad && ms->button & MOUSE_BUTTON1DOWN) {
+		if (tphw->is_clickpad && ms->button & MOUSE_BUTTON1DOWN) {
 			int y_ok, center_bt, center_x, right_bt, right_x;
 			y_ok = syninfo.softbuttons_y < 0
 			    ? start_y < min_y - syninfo.softbuttons_y
@@ -2271,8 +2276,8 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 		if (!gest->in_taphold && !ms->button &&
 		    (!gest->in_vscroll || two_finger_scroll) &&
 		    (tscmp(time, &gest->taptimeout, >) ||
-		     dx >= syninfo.vscroll_min_delta * synhw.res_x ||
-		     dy >= syninfo.vscroll_min_delta * synhw.res_y)) {
+		     dx >= syninfo.vscroll_min_delta * tphw->res_x ||
+		     dy >= syninfo.vscroll_min_delta * tphw->res_y)) {
 			/*
 			 * Handle two finger scrolling.
 			 * Note that we don't rely on fingers_nb
@@ -2331,8 +2336,8 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 		/* Max delta is disabled for multi-fingers tap. */
 		if (gest->fingers_nb == 1 &&
 		    tscmp(time, &gest->taptimeout, <=)) {
-			tap_max_delta_x = syninfo.tap_max_delta * synhw.res_x;
-			tap_max_delta_y = syninfo.tap_max_delta * synhw.res_y;
+			tap_max_delta_x = syninfo.tap_max_delta * tphw->res_x;
+			tap_max_delta_y = syninfo.tap_max_delta * tphw->res_y;
 
 			debug("dx=%d, dy=%d, deltax=%d, deltay=%d",
 			    dx, dy, tap_max_delta_x, tap_max_delta_y);
@@ -2354,7 +2359,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 	 * button up event when surface is released after click.
 	 * It interferes with softbuttons.
 	 */
-	if (synhw.is_clickpad && syninfo.softbuttons_y != 0)
+	if (tphw->is_clickpad && syninfo.softbuttons_y != 0)
 		ms->button &= ~MOUSE_BUTTON1DOWN;
 
 	gest->prev_nfingers = 0;
