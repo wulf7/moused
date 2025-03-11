@@ -218,7 +218,7 @@ struct tpcaps {
 	int	res_y;	/* dots per mm */
 };
 
-static struct tpinfo {
+struct tpinfo {
 	bool	two_finger_scroll;	/* Enable two finger scrolling */
 	bool	natural_scroll;		/* Enable natural scrolling */
 	bool	three_finger_drag;	/* Enable dragging with three fingers */
@@ -240,21 +240,6 @@ static struct tpinfo {
 	int	softbuttons_y;		/* Vertical size of softbuttons area */
 	int	softbutton2_x;		/* Horizontal offset of 2-nd softbutton left edge */
 	int	softbutton3_x;		/* Horizontal offset of 3-rd softbutton left edge */
-} syninfo = {
-	.two_finger_scroll = true,
-	.natural_scroll = false,
-	.three_finger_drag = false,
-	.min_pressure_hi = 1,
-	.min_pressure_lo = 1,
-	.max_pressure = 130,
-	.max_width = 16,
-	.tap_timeout = 180,		/* ms */
-	.tap_threshold = 0,
-	.tap_max_delta = 1.3,		/* mm */
-	.taphold_timeout = 300,		/* ms */
-	.vscroll_min_delta = 1.25,	/* mm */
-	.vscroll_hor_area = 0.0,	/* mm */
-	.vscroll_ver_area = -15.0,	/* mm */
 };
 
 static struct gesture_state {
@@ -361,6 +346,7 @@ static struct rodentparam {
 	struct accel accel;	/* cursor acceleration state */
 	struct scroll scroll;	/* virtual scroll state */
 	struct tpcaps tphw;	/* touchpad capabilities */
+	struct tpinfo tpinfo;	/* touchpad gesture parameters */
 } rodent = {
 	.flags = 0,
 	.dev.path = NULL,
@@ -375,6 +361,22 @@ static struct rodentparam {
 	.scroll = {
 		.threshold = DFLT_SCROLLTHRESHOLD,
 		.speed = DFLT_SCROLLSPEED,
+	},
+	.tpinfo = {
+		.two_finger_scroll = true,
+		.natural_scroll = false,
+		.three_finger_drag = false,
+		.min_pressure_hi = 1,
+		.min_pressure_lo = 1,
+		.max_pressure = 130,
+		.max_width = 16,
+		.tap_timeout = 180,		/* ms */
+		.tap_threshold = 0,
+		.tap_max_delta = 1.3,		/* mm */
+		.taphold_timeout = 300,		/* ms */
+		.vscroll_min_delta = 1.25,	/* mm */
+		.vscroll_hor_area = 0.0,	/* mm */
+		.vscroll_ver_area = -15.0,	/* mm */
 	},
 };
 
@@ -1186,6 +1188,7 @@ r_init_touchpad(void)
 	bitstr_t bit_decl(abs_bits, ABS_CNT);
 	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
 	struct tpcaps *tphw = &rodent.tphw;
+	struct tpinfo *tpinfo = &rodent.tpinfo;
 	struct quirks *q = rodent.quirks;
 	struct quirk_range r;
 	struct quirk_dimensions dim;
@@ -1193,15 +1196,15 @@ r_init_touchpad(void)
 	u_int u;
 	int sz_x, sz_y;
 
-	quirks_get_bool(q, MOUSED_TWO_FINGER_SCROLL, &syninfo.two_finger_scroll);
-	quirks_get_bool(q, MOUSED_NATURAL_SCROLL, &syninfo.natural_scroll);
-	quirks_get_bool(q, MOUSED_THREE_FINGER_DRAG, &syninfo.three_finger_drag);
-	quirks_get_uint32(q, MOUSED_TAP_TIMEOUT, &syninfo.tap_timeout);
-	quirks_get_double(q, MOUSED_TAP_MAX_DELTA, &syninfo.tap_max_delta);
-	quirks_get_uint32(q, MOUSED_TAPHOLD_TIMEOUT, &syninfo.taphold_timeout);
-	quirks_get_double(q, MOUSED_VSCROLL_MIN_DELTA, &syninfo.vscroll_min_delta);
-	quirks_get_double(q, MOUSED_VSCROLL_HOR_AREA, &syninfo.vscroll_hor_area);
-	quirks_get_double(q, MOUSED_VSCROLL_VER_AREA, &syninfo.vscroll_ver_area);
+	quirks_get_bool(q, MOUSED_TWO_FINGER_SCROLL, &tpinfo->two_finger_scroll);
+	quirks_get_bool(q, MOUSED_NATURAL_SCROLL, &tpinfo->natural_scroll);
+	quirks_get_bool(q, MOUSED_THREE_FINGER_DRAG, &tpinfo->three_finger_drag);
+	quirks_get_uint32(q, MOUSED_TAP_TIMEOUT, &tpinfo->tap_timeout);
+	quirks_get_double(q, MOUSED_TAP_MAX_DELTA, &tpinfo->tap_max_delta);
+	quirks_get_uint32(q, MOUSED_TAPHOLD_TIMEOUT, &tpinfo->taphold_timeout);
+	quirks_get_double(q, MOUSED_VSCROLL_MIN_DELTA, &tpinfo->vscroll_min_delta);
+	quirks_get_double(q, MOUSED_VSCROLL_HOR_AREA, &tpinfo->vscroll_hor_area);
+	quirks_get_double(q, MOUSED_VSCROLL_VER_AREA, &tpinfo->vscroll_ver_area);
 
 	ioctl(rodent.mfd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits);
 	ioctl(rodent.mfd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits);
@@ -1239,27 +1242,27 @@ r_init_touchpad(void)
 				debug("pressure-based touch detection disabled");
 				tphw->cap_pressure = false;
 			} else {
-				syninfo.min_pressure_lo = r.lower;
-				syninfo.min_pressure_hi = r.upper;
+				tpinfo->min_pressure_lo = r.lower;
+				tpinfo->min_pressure_hi = r.upper;
 			}
 		}
-		if (syninfo.min_pressure_hi > ai.maximum ||
-		    syninfo.min_pressure_hi < ai.minimum ||
-		    syninfo.min_pressure_lo > ai.maximum ||
-		    syninfo.min_pressure_lo < ai.minimum) {
+		if (tpinfo->min_pressure_hi > ai.maximum ||
+		    tpinfo->min_pressure_hi < ai.minimum ||
+		    tpinfo->min_pressure_lo > ai.maximum ||
+		    tpinfo->min_pressure_lo < ai.minimum) {
 			debug("discarding out-of-bounds pressure range %d:%d",
-			    syninfo.min_pressure_hi, syninfo.min_pressure_lo);
+			    tpinfo->min_pressure_hi, tpinfo->min_pressure_lo);
 			tphw->cap_pressure = false;
 		}
 		quirks_get_uint32(q, QUIRK_ATTR_PALM_PRESSURE_THRESHOLD,
-		    &syninfo.max_pressure);
+		    &tpinfo->max_pressure);
 		quirks_get_uint32(q, MOUSED_TAP_PRESSURE_THRESHOLD,
-		    &syninfo.tap_threshold);
+		    &tpinfo->tap_threshold);
 	}
 	/* XXX: libinput uses ABS_MT_TOUCH_MAJOR where available */
 	if (bit_test(abs_bits, ABS_TOOL_WIDTH) &&
 	    quirks_get_uint32(q, QUIRK_ATTR_PALM_SIZE_THRESHOLD,
-	     &syninfo.max_width) && syninfo.max_width != 0)
+	     &tpinfo->max_width) && tpinfo->max_width != 0)
 		tphw->cap_width = true;
 	if (bit_test(abs_bits, ABS_MT_SLOT) &&
 	    bit_test(abs_bits, ABS_MT_TRACKING_ID) &&
@@ -1274,15 +1277,15 @@ r_init_touchpad(void)
 	if (tphw->is_clickpad) {
 		i = 25;
 		quirks_get_int32(q, MOUSED_SOFTBUTTONS_Y, &i);
-		syninfo.softbuttons_y = sz_y * i / 100;
+		tpinfo->softbuttons_y = sz_y * i / 100;
 		if (bit_test(prop_bits, INPUT_PROP_TOPBUTTONPAD))
-			syninfo.softbuttons_y = -syninfo.softbuttons_y;
+			tpinfo->softbuttons_y = -tpinfo->softbuttons_y;
 		u = 42;
 		quirks_get_uint32(q, MOUSED_SOFTBUTTON2_X, &u);
-		syninfo.softbutton2_x = sz_x * u / 100;
+		tpinfo->softbutton2_x = sz_x * u / 100;
 		u = 58;
 		quirks_get_uint32(q, MOUSED_SOFTBUTTON3_X, &u);
-		syninfo.softbutton3_x = sz_x * u / 100;
+		tpinfo->softbutton3_x = sz_x * u / 100;
 	}
 	/* Normalize pointer movement to match 200dpi mouse */
 	rodent.accel.accelx *= DFLT_MOUSE_RESOLUTION;
@@ -1438,6 +1441,7 @@ static int
 r_protocol(struct input_event *ie, mousestatus_t *act)
 {
 	struct tpcaps *tphw = &rodent.tphw;
+	struct tpinfo *tpinfo = &rodent.tpinfo;
 
 	static int butmapev[8] = {	/* evdev */
 	    0,
@@ -1563,7 +1567,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	ietime.tv_nsec = ie->time.tv_usec * 1000;
 
 	if (!tphw->cap_pressure && ev.st.id != 0)
-		ev.st.p = MAX(syninfo.min_pressure_hi, syninfo.tap_threshold);
+		ev.st.p = MAX(tpinfo->min_pressure_hi, tpinfo->tap_threshold);
 	if (tphw->cap_touch && ev.st.id == 0)
 		ev.st.p = 0;
 
@@ -1614,7 +1618,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 			debug("gesture MOVE %d,%d", ev.dx, ev.dy);
 			break;
 		case GEST_VSCROLL:	/* Vertical scrolling. */
-			if (syninfo.natural_scroll)
+			if (tpinfo->natural_scroll)
 				ev.dz = -ev.dy;
 			else
 				ev.dz = ev.dy;
@@ -1626,7 +1630,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 		case GEST_HSCROLL:	/* Horizontal scrolling. */
 /*
 			if (ev.dx != 0) {
-				if (syninfo.natural_scroll)
+				if (tpinfo->natural_scroll)
 					act->button |= (ev.dx > 0)
 					    ? MOUSE_BUTTON6DOWN
 					    : MOUSE_BUTTON7DOWN;
@@ -2113,25 +2117,26 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 {
 	struct gesture_state *gest = &gesture;
 	struct tpcaps *tphw = &rodent.tphw;
-	int tap_timeout = syninfo.tap_timeout;
+	struct tpinfo *tpinfo = &rodent.tpinfo;
+	int tap_timeout = tpinfo->tap_timeout;
 
 	/*
 	 * Check pressure to detect a real wanted action on the
 	 * touchpad.
 	 */
-	if (z >= syninfo.min_pressure_hi ||
-	    (gest->fingerdown && z >= syninfo.min_pressure_lo)) {
+	if (z >= tpinfo->min_pressure_hi ||
+	    (gest->fingerdown && z >= tpinfo->min_pressure_lo)) {
 		/* XXX Verify values? */
-		bool two_finger_scroll = syninfo.two_finger_scroll;
-		bool three_finger_drag = syninfo.three_finger_drag;
-		int max_width = syninfo.max_width;
-		int max_pressure = syninfo.max_pressure;
-		int margin_top = syninfo.margin_top;
-		int margin_right = syninfo.margin_right;
-		int margin_bottom = syninfo.margin_bottom;
-		int margin_left = syninfo.margin_left;
-		int vscroll_hor_area = syninfo.vscroll_hor_area * tphw->res_x;
-		int vscroll_ver_area = syninfo.vscroll_ver_area * tphw->res_y;;
+		bool two_finger_scroll = tpinfo->two_finger_scroll;
+		bool three_finger_drag = tpinfo->three_finger_drag;
+		int max_width = tpinfo->max_width;
+		int max_pressure = tpinfo->max_pressure;
+		int margin_top = tpinfo->margin_top;
+		int margin_right = tpinfo->margin_right;
+		int margin_bottom = tpinfo->margin_bottom;
+		int margin_left = tpinfo->margin_left;
+		int vscroll_hor_area = tpinfo->vscroll_hor_area * tphw->res_x;
+		int vscroll_ver_area = tpinfo->vscroll_ver_area * tphw->res_y;;
 
 		int max_x = tphw->max_x;
 		int max_y = tphw->max_y;
@@ -2219,20 +2224,20 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 		/* Process ClickPad softbuttons */
 		if (tphw->is_clickpad && ms->button & MOUSE_BUTTON1DOWN) {
 			int y_ok, center_bt, center_x, right_bt, right_x;
-			y_ok = syninfo.softbuttons_y < 0
-			    ? start_y < min_y - syninfo.softbuttons_y
-			    : start_y > max_y - syninfo.softbuttons_y;
+			y_ok = tpinfo->softbuttons_y < 0
+			    ? start_y < min_y - tpinfo->softbuttons_y
+			    : start_y > max_y - tpinfo->softbuttons_y;
 
 			center_bt = MOUSE_BUTTON2DOWN;
-			center_x = min_x + syninfo.softbutton2_x;
+			center_x = min_x + tpinfo->softbutton2_x;
 			right_bt = MOUSE_BUTTON3DOWN;
-			right_x = min_x + syninfo.softbutton3_x;
+			right_x = min_x + tpinfo->softbutton3_x;
 
 			if (center_x > 0 && right_x > 0 && center_x > right_x) {
 				center_bt = MOUSE_BUTTON3DOWN;
-				center_x = min_x + syninfo.softbutton3_x;
+				center_x = min_x + tpinfo->softbutton3_x;
 				right_bt = MOUSE_BUTTON2DOWN;
-				right_x = min_x + syninfo.softbutton2_x;
+				right_x = min_x + tpinfo->softbutton2_x;
 			}
 
 			if (right_x > 0 && start_x > right_x && y_ok)
@@ -2276,8 +2281,8 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 		if (!gest->in_taphold && !ms->button &&
 		    (!gest->in_vscroll || two_finger_scroll) &&
 		    (tscmp(time, &gest->taptimeout, >) ||
-		     dx >= syninfo.vscroll_min_delta * tphw->res_x ||
-		     dy >= syninfo.vscroll_min_delta * tphw->res_y)) {
+		     dx >= tpinfo->vscroll_min_delta * tphw->res_x ||
+		     dy >= tpinfo->vscroll_min_delta * tphw->res_y)) {
 			/*
 			 * Handle two finger scrolling.
 			 * Note that we don't rely on fingers_nb
@@ -2336,8 +2341,8 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 		/* Max delta is disabled for multi-fingers tap. */
 		if (gest->fingers_nb == 1 &&
 		    tscmp(time, &gest->taptimeout, <=)) {
-			tap_max_delta_x = syninfo.tap_max_delta * tphw->res_x;
-			tap_max_delta_y = syninfo.tap_max_delta * tphw->res_y;
+			tap_max_delta_x = tpinfo->tap_max_delta * tphw->res_x;
+			tap_max_delta_y = tpinfo->tap_max_delta * tphw->res_y;
 
 			debug("dx=%d, dy=%d, deltax=%d, deltay=%d",
 			    dx, dy, tap_max_delta_x, tap_max_delta_y);
@@ -2359,7 +2364,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 	 * button up event when surface is released after click.
 	 * It interferes with softbuttons.
 	 */
-	if (tphw->is_clickpad && syninfo.softbuttons_y != 0)
+	if (tphw->is_clickpad && tpinfo->softbuttons_y != 0)
 		ms->button &= ~MOUSE_BUTTON1DOWN;
 
 	gest->prev_nfingers = 0;
@@ -2374,7 +2379,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 
 		/* Check for tap. */
 		debug("zmax=%d fingers=%d", gest->zmax, gest->fingers_nb);
-		if (!gest->in_vscroll && gest->zmax >= syninfo.tap_threshold &&
+		if (!gest->in_vscroll && gest->zmax >= tpinfo->tap_threshold &&
 		    tscmp(time, &gest->taptimeout, <=)) {
 			/*
 			 * We have a tap if:
@@ -2411,7 +2416,7 @@ r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
 				 * down event.
 				 */
 				gest->in_taphold = true;
-				gest->idletimeout = syninfo.taphold_timeout;
+				gest->idletimeout = tpinfo->taphold_timeout;
 				gest->taptimeout = tsaddms(time, tap_timeout);
 
 				switch (gest->fingers_nb) {
