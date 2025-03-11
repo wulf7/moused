@@ -28,16 +28,13 @@
  * SUCH DAMAGE.
  */
 
-/**
- ** MOUSED.C
- **
- ** Mouse daemon : listens to a evdev device node for mouse data stream,
- ** interprets data and passes ioctls off to the console driver.
- **
- **/
-
-#include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
+/*
+ * MOUSED.C
+ *
+ * Mouse daemon : listens to a evdev device node for mouse data stream,
+ * interprets data and passes ioctls off to the console driver.
+ *
+ */
 
 #include <sys/param.h>
 #include <sys/bitstring.h>
@@ -1003,11 +1000,11 @@ pause_mouse(__unused int sig)
 	paused = !paused;
 }
 
-/**
- ** usage
- **
- ** Complain, and free the CPU for more worthy tasks
- **/
+/*
+ * usage
+ *
+ * Complain, and free the CPU for more worthy tasks
+ */
 static void
 usage(void)
 {
