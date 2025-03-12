@@ -445,8 +445,8 @@ static jmp_buf env;
 
 static moused_log_handler	log_or_warn_va;
 
-static void	linacc(int, int, int, int*, int*, int*);
-static void	expoacc(int, int, int, int*, int*, int*);
+static void	linacc(struct accel *, int, int, int, int*, int*, int*);
+static void	expoacc(struct accel *, int, int, int, int*, int*, int*);
 static void	moused(void);
 static void	reset(int sig);
 static void	pause_mouse(int sig);
@@ -465,7 +465,7 @@ static bool	r_installmap(char *arg);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
 static void	r_timestamp(mousestatus_t *act);
 static bool	r_timeout(void);
-static void	r_move(mousestatus_t *act);
+static void	r_move(mousestatus_t *act, struct accel *acc);
 static void	r_click(mousestatus_t *act);
 static bool	r_drift(struct drift *, mousestatus_t *);
 static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
@@ -769,9 +769,9 @@ out:
  */
 
 static void
-linacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
+linacc(struct accel *acc, int dx, int dy, int dz,
+    int *movex, int *movey, int *movez)
 {
-	struct accel *acc = &rodent.accel;
 	double fdx, fdy, fdz;
 
 	if (dx == 0 && dy == 0 && dz == 0) {
@@ -799,9 +799,9 @@ linacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
  */
 
 static void
-expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
+expoacc(struct accel *acc, int dx, int dy, int dz,
+    int *movex, int *movey, int *movez)
 {
-	struct accel *acc = &rodent.accel;
 	double fdx, fdy, fdz, length, lbase, accel;
 
 	if (dx == 0 && dy == 0 && dz == 0) {
@@ -961,7 +961,7 @@ moused(void)
 			r_click(&action2);
 
 		if (action2.flags & MOUSE_POSCHANGED)
-			r_move(&action2);
+			r_move(&action2, &rodent.accel);
 
 		/*
 		 * If the Z axis movement is mapped to an imaginary physical
@@ -2067,16 +2067,16 @@ r_timeout(void)
 }
 
 static void
-r_move(mousestatus_t *act)
+r_move(mousestatus_t *act, struct accel *acc)
 {
 	struct mouse_info mouse;
 
 	bzero(&mouse, sizeof(mouse));
-	if (rodent.accel.is_exponential) {
-		expoacc(act->dx, act->dy, act->dz,
+	if (acc->is_exponential) {
+		expoacc(acc, act->dx, act->dy, act->dz,
 		    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
 	} else {
-		linacc(act->dx, act->dy, act->dz,
+		linacc(acc, act->dx, act->dy, act->dz,
 		    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
 	}
 	mouse.operation = MOUSE_MOTION_EVENT;
