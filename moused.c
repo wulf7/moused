@@ -465,6 +465,7 @@ static bool	r_installmap(char *arg);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
 static void	r_timestamp(mousestatus_t *act);
 static bool	r_timeout(void);
+static void	r_move(mousestatus_t *act);
 static void	r_click(mousestatus_t *act);
 static bool	r_drift(struct drift *, mousestatus_t *);
 static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
@@ -832,7 +833,6 @@ expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 static void
 moused(void)
 {
-	struct mouse_info mouse;
 	mousestatus_t action0;		/* original mouse action */
 	mousestatus_t action;		/* interim buffer */
 	mousestatus_t action2;		/* mapped action */
@@ -848,7 +848,6 @@ moused(void)
 	bzero(&action0, sizeof(action0));
 	bzero(&action, sizeof(action));
 	bzero(&action2, sizeof(action2));
-	bzero(&mouse, sizeof(mouse));
 	/* process mouse data */
 	for (;;) {
 
@@ -961,19 +960,8 @@ moused(void)
 		if (rodent.scroll.state == SCROLL_NOTSCROLLING)
 			r_click(&action2);
 
-		if (action2.flags & MOUSE_POSCHANGED) {
-			mouse.operation = MOUSE_MOTION_EVENT;
-			mouse.u.data.buttons = action2.button;
-			if (rodent.accel.is_exponential) {
-				expoacc(action2.dx, action2.dy, action2.dz,
-				    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
-			} else {
-				linacc(action2.dx, action2.dy, action2.dz,
-				    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
-			}
-			if (debug < 2 && !paused)
-				ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
-		}
+		if (action2.flags & MOUSE_POSCHANGED)
+			r_move(&action2);
 
 		/*
 		 * If the Z axis movement is mapped to an imaginary physical
@@ -2076,6 +2064,25 @@ r_timeout(void)
 	clock_gettime(CLOCK_MONOTONIC_FAST, &ts1);
 	ts = tssubms(&ts1, rodent.button2timeout);
 	return (tscmp(&ts, &mouse_button_state_ts, >));
+}
+
+static void
+r_move(mousestatus_t *act)
+{
+	struct mouse_info mouse;
+
+	bzero(&mouse, sizeof(mouse));
+	if (rodent.accel.is_exponential) {
+		expoacc(act->dx, act->dy, act->dz,
+		    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
+	} else {
+		linacc(act->dx, act->dy, act->dz,
+		    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
+	}
+	mouse.operation = MOUSE_MOTION_EVENT;
+	mouse.u.data.buttons = act->button;
+	if (debug < 2 && !paused)
+		ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
 }
 
 static void
