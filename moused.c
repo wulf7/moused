@@ -903,7 +903,8 @@ moused(void)
 				b.value = 1;
 			}
 			gesture.idletimeout = -1;
-			if ((flags = r_protocol(&b, &action0)) == 0)
+			flags = r_protocol(&b, &action0);
+			if (flags == 0)
 				continue;
 
 			if (opt_virtual_scroll || opt_hvirtual_scroll) {
