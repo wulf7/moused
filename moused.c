@@ -832,163 +832,163 @@ expoacc(int dx, int dy, int dz, int *movex, int *movey, int *movez)
 static void
 moused(void)
 {
-    struct mouse_info mouse;
-    mousestatus_t action0;		/* original mouse action */
-    mousestatus_t action;		/* interim buffer */
-    mousestatus_t action2;		/* mapped action */
-    int timeout;
-    bool timeout_em3b;
-    struct pollfd fds;
-    struct input_event b;
-    int flags;
-    int c;
-    int i;
+	struct mouse_info mouse;
+	mousestatus_t action0;		/* original mouse action */
+	mousestatus_t action;		/* interim buffer */
+	mousestatus_t action2;		/* mapped action */
+	int timeout;
+	bool timeout_em3b;
+	struct pollfd fds;
+	struct input_event b;
+	int flags;
+	int c;
+	int i;
 
-    /* clear mouse data */
-    bzero(&action0, sizeof(action0));
-    bzero(&action, sizeof(action));
-    bzero(&action2, sizeof(action2));
-    bzero(&mouse, sizeof(mouse));
-    /* process mouse data */
-    for (;;) {
+	/* clear mouse data */
+	bzero(&action0, sizeof(action0));
+	bzero(&action, sizeof(action));
+	bzero(&action2, sizeof(action2));
+	bzero(&mouse, sizeof(mouse));
+	/* process mouse data */
+	for (;;) {
 
-	fds.fd = rodent.mfd;
-	fds.events = POLLIN;
-	fds.revents = 0;
-	timeout = -1;
-	if ((rodent.flags & Emulate3Button) && S_DELAYED(mouse_button_state)) {
-	    timeout = 20;
-	    timeout_em3b = true;
-	}
-	if (gesture.idletimeout != -1) {
-	    if (timeout == -1 || gesture.idletimeout < timeout) {
-		timeout = gesture.idletimeout;
-		timeout_em3b = false;
-	    } else
-		gesture.idletimeout -= timeout;
-	}
+		fds.fd = rodent.mfd;
+		fds.events = POLLIN;
+		fds.revents = 0;
+		timeout = -1;
+		if ((rodent.flags & Emulate3Button) && S_DELAYED(mouse_button_state)) {
+			timeout = 20;
+			timeout_em3b = true;
+		}
+		if (gesture.idletimeout != -1) {
+			if (timeout == -1 || gesture.idletimeout < timeout) {
+				timeout = gesture.idletimeout;
+				timeout_em3b = false;
+			} else
+				gesture.idletimeout -= timeout;
+		}
 
-	c = poll(&fds, 1, timeout);
-	if (c < 0) {                    /* error */
-	    logwarn("failed to read from mouse");
-	    continue;
-	} else if (c == 0 && timeout_em3b) {	/* timeout */
-	    /* assert(rodent.flags & Emulate3Button) */
-	    action0.button = action0.obutton;
-	    action0.dx = action0.dy = action0.dz = 0;
-	    action0.flags = flags = 0;
-	    if (r_timeout() && r_statetrans(&action0, &action, A_TIMEOUT)) {
-		if (debug > 2)
-		    debug("flags:%08x buttons:%08x obuttons:%08x",
-			  action.flags, action.button, action.obutton);
-	    } else {
-		action0.obutton = action0.button;
-		continue;
-	    }
-	} else {
-	    /* mouse movement */
-	    if (c > 0) {
-		if ((fds.revents & POLLIN) == 0)
-		    return;
-		if (read(rodent.mfd, &b, sizeof(b)) == -1) {
-		    if (errno == EWOULDBLOCK)
+		c = poll(&fds, 1, timeout);
+		if (c < 0) {                    /* error */
+			logwarn("failed to read from mouse");
 			continue;
-		    else
-			return;
-		}
-	    } else {
-		b.time.tv_sec = timeout == 0 ? 0 : LONG_MAX;
-		b.time.tv_usec = 0;
-		b.type = EV_SYN;
-		b.code = SYN_REPORT;
-		b.value = 1;
-	    }
-	    gesture.idletimeout = -1;
-	    if ((flags = r_protocol(&b, &action0)) == 0)
-		continue;
-
-	    if (opt_virtual_scroll || opt_hvirtual_scroll) {
-		if (action0.button == MOUSE_BUTTON2DOWN) {
-			debug("[BUTTON2] flags:%08x buttons:%08x obuttons:%08x",
-			    action.flags, action.button, action.obutton);
-		} else {
-			debug("[NOTBUTTON2] flags:%08x buttons:%08x obuttons:%08x",
-			    action.flags, action.button, action.obutton);
-		}
-		r_vscroll_detect(&action0);
-	    }
-
-	    r_timestamp(&action0);
-	    r_statetrans(&action0, &action,
-			 A(action0.button & MOUSE_BUTTON1DOWN,
-			   action0.button & MOUSE_BUTTON3DOWN));
-	    debug("flags:%08x buttons:%08x obuttons:%08x", action.flags,
-		  action.button, action.obutton);
-	}
-	action0.obutton = action0.button;
-	flags &= MOUSE_POSCHANGED;
-	flags |= action.obutton ^ action.button;
-	action.flags = flags;
-
-	if (flags) {			/* handler detected action */
-	    r_map(&action, &action2);
-	    debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
-		action2.button, action2.dx, action2.dy, action2.dz);
-
-	    if (opt_virtual_scroll || opt_hvirtual_scroll) {
-		/*
-		 * If *only* the middle button is pressed AND we are moving
-		 * the stick/trackpoint/nipple, scroll!
-		 */
-		r_vscroll(&action2);
-	    }
-
-		if (rodent.drift.terminate) {
-			if ((flags & MOUSE_POSCHANGED) == 0 ||
-			    action.dz || action2.dz)
-				rodent.drift.last_activity =
-				    rodent.drift.current_ts;
-			else {
-				if (r_drift (&rodent.drift, &action2))
-					continue;
-			}
-		}
-
-		/* Defer clicks until we aren't VirtualScroll'ing. */
-		if (rodent.scroll.state == SCROLL_NOTSCROLLING)
-			r_click(&action2);
-
-		if (action2.flags & MOUSE_POSCHANGED) {
-			mouse.operation = MOUSE_MOTION_EVENT;
-			mouse.u.data.buttons = action2.button;
-			if (rodent.accel.is_exponential) {
-				expoacc(action2.dx, action2.dy, action2.dz,
-				    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
+		} else if (c == 0 && timeout_em3b) {	/* timeout */
+			/* assert(rodent.flags & Emulate3Button) */
+			action0.button = action0.obutton;
+			action0.dx = action0.dy = action0.dz = 0;
+			action0.flags = flags = 0;
+			if (r_timeout() && r_statetrans(&action0, &action, A_TIMEOUT)) {
+				if (debug > 2)
+					debug("flags:%08x buttons:%08x obuttons:%08x",
+					    action.flags, action.button, action.obutton);
 			} else {
-				linacc(action2.dx, action2.dy, action2.dz,
-				    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
+				action0.obutton = action0.button;
+				continue;
 			}
-			if (debug < 2 && !paused)
-				ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
+		} else {
+			/* mouse movement */
+			if (c > 0) {
+				if ((fds.revents & POLLIN) == 0)
+					return;
+				if (read(rodent.mfd, &b, sizeof(b)) == -1) {
+					if (errno == EWOULDBLOCK)
+						continue;
+					else
+						return;
+				}
+			} else {
+				b.time.tv_sec = timeout == 0 ? 0 : LONG_MAX;
+				b.time.tv_usec = 0;
+				b.type = EV_SYN;
+				b.code = SYN_REPORT;
+				b.value = 1;
+			}
+			gesture.idletimeout = -1;
+			if ((flags = r_protocol(&b, &action0)) == 0)
+				continue;
+
+			if (opt_virtual_scroll || opt_hvirtual_scroll) {
+				if (action0.button == MOUSE_BUTTON2DOWN) {
+					debug("[BUTTON2] flags:%08x buttons:%08x obuttons:%08x",
+					    action.flags, action.button, action.obutton);
+				} else {
+					debug("[NOTBUTTON2] flags:%08x buttons:%08x obuttons:%08x",
+					    action.flags, action.button, action.obutton);
+				}
+				r_vscroll_detect(&action0);
+			}
+
+			r_timestamp(&action0);
+			r_statetrans(&action0, &action,
+			    A(action0.button & MOUSE_BUTTON1DOWN,
+			      action0.button & MOUSE_BUTTON3DOWN));
+			debug("flags:%08x buttons:%08x obuttons:%08x", action.flags,
+			    action.button, action.obutton);
 		}
+		action0.obutton = action0.button;
+		flags &= MOUSE_POSCHANGED;
+		flags |= action.obutton ^ action.button;
+		action.flags = flags;
 
-	    /*
-	     * If the Z axis movement is mapped to an imaginary physical
-	     * button, we need to cook up a corresponding button `up' event
-	     * after sending a button `down' event.
-	     */
-	    if ((rodent.zmap[0] > 0) && (action.dz != 0)) {
-		action.obutton = action.button;
-		action.dx = action.dy = action.dz = 0;
-		r_map(&action, &action2);
-		debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
-		    action2.button, action2.dx, action2.dy, action2.dz);
+		if (flags) {			/* handler detected action */
+			r_map(&action, &action2);
+			debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
+			    action2.button, action2.dx, action2.dy, action2.dz);
 
-		r_click(&action2);
-	    }
+			if (opt_virtual_scroll || opt_hvirtual_scroll) {
+				/*
+				 * If *only* the middle button is pressed AND we are moving
+				 * the stick/trackpoint/nipple, scroll!
+				 */
+				r_vscroll(&action2);
+			}
+
+			if (rodent.drift.terminate) {
+				if ((flags & MOUSE_POSCHANGED) == 0 ||
+				    action.dz || action2.dz)
+					rodent.drift.last_activity =
+					    rodent.drift.current_ts;
+				else {
+					if (r_drift (&rodent.drift, &action2))
+						continue;
+				}
+			}
+
+			/* Defer clicks until we aren't VirtualScroll'ing. */
+			if (rodent.scroll.state == SCROLL_NOTSCROLLING)
+				r_click(&action2);
+
+			if (action2.flags & MOUSE_POSCHANGED) {
+				mouse.operation = MOUSE_MOTION_EVENT;
+				mouse.u.data.buttons = action2.button;
+				if (rodent.accel.is_exponential) {
+					expoacc(action2.dx, action2.dy, action2.dz,
+					    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
+				} else {
+					linacc(action2.dx, action2.dy, action2.dz,
+					    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
+				}
+				if (debug < 2 && !paused)
+					ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
+			}
+
+			/*
+			 * If the Z axis movement is mapped to an imaginary physical
+			 * button, we need to cook up a corresponding button `up' event
+			 * after sending a button `down' event.
+			 */
+			if ((rodent.zmap[0] > 0) && (action.dz != 0)) {
+				action.obutton = action.button;
+				action.dx = action.dy = action.dz = 0;
+				r_map(&action, &action2);
+				debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
+				    action2.button, action2.dx, action2.dy, action2.dz);
+
+				r_click(&action2);
+			}
+		}
 	}
-    }
-    /* NOT REACHED */
+	/* NOT REACHED */
 }
 
 static void
@@ -1011,13 +1011,13 @@ pause_mouse(__unused int sig)
 static void
 usage(void)
 {
-    fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n",
-	"usage: moused [-cdfg] [-I file]",
-	"              [-VH [-U threshold]] [-a X[,Y]] [-C threshold] [-m N=M] [-w N]",
-	"              [-z N] [-3 [-E timeout]]",
-	"              [-T distance[,time[,after]]] -p <port> [-q config] [-Q quirks]",
-	"       moused [-d] -i <port|type|model|all> -p <port>");
-    exit(1);
+	fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n",
+	    "usage: moused [-cdfg] [-I file]",
+	    "              [-VH [-U threshold]] [-a X[,Y]] [-C threshold] [-m N=M] [-w N]",
+	    "              [-z N] [-3 [-E timeout]]",
+	    "              [-T distance[,time[,after]]] -p <port> [-q config] [-Q quirks]",
+	    "       moused [-d] -i <port|type|model|all> -p <port>");
+	exit(1);
 }
 
 /*
