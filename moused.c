@@ -930,62 +930,64 @@ moused(void)
 		flags |= action.obutton ^ action.button;
 		action.flags = flags;
 
-		if (flags) {			/* handler detected action */
+		if (flags == 0)
+			continue;
+
+		/* handler detected action */
+		r_map(&action, &action2);
+		debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
+		    action2.button, action2.dx, action2.dy, action2.dz);
+
+		if (opt_virtual_scroll || opt_hvirtual_scroll) {
+			/*
+			 * If *only* the middle button is pressed AND we are moving
+			 * the stick/trackpoint/nipple, scroll!
+			 */
+			r_vscroll(&action2);
+		}
+
+		if (rodent.drift.terminate) {
+			if ((flags & MOUSE_POSCHANGED) == 0 ||
+			    action.dz || action2.dz)
+				rodent.drift.last_activity =
+				    rodent.drift.current_ts;
+			else {
+				if (r_drift (&rodent.drift, &action2))
+					continue;
+			}
+		}
+
+		/* Defer clicks until we aren't VirtualScroll'ing. */
+		if (rodent.scroll.state == SCROLL_NOTSCROLLING)
+			r_click(&action2);
+
+		if (action2.flags & MOUSE_POSCHANGED) {
+			mouse.operation = MOUSE_MOTION_EVENT;
+			mouse.u.data.buttons = action2.button;
+			if (rodent.accel.is_exponential) {
+				expoacc(action2.dx, action2.dy, action2.dz,
+				    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
+			} else {
+				linacc(action2.dx, action2.dy, action2.dz,
+				    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
+			}
+			if (debug < 2 && !paused)
+				ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
+		}
+
+		/*
+		 * If the Z axis movement is mapped to an imaginary physical
+		 * button, we need to cook up a corresponding button `up' event
+		 * after sending a button `down' event.
+		 */
+		if ((rodent.zmap[0] > 0) && (action.dz != 0)) {
+			action.obutton = action.button;
+			action.dx = action.dy = action.dz = 0;
 			r_map(&action, &action2);
 			debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
 			    action2.button, action2.dx, action2.dy, action2.dz);
 
-			if (opt_virtual_scroll || opt_hvirtual_scroll) {
-				/*
-				 * If *only* the middle button is pressed AND we are moving
-				 * the stick/trackpoint/nipple, scroll!
-				 */
-				r_vscroll(&action2);
-			}
-
-			if (rodent.drift.terminate) {
-				if ((flags & MOUSE_POSCHANGED) == 0 ||
-				    action.dz || action2.dz)
-					rodent.drift.last_activity =
-					    rodent.drift.current_ts;
-				else {
-					if (r_drift (&rodent.drift, &action2))
-						continue;
-				}
-			}
-
-			/* Defer clicks until we aren't VirtualScroll'ing. */
-			if (rodent.scroll.state == SCROLL_NOTSCROLLING)
-				r_click(&action2);
-
-			if (action2.flags & MOUSE_POSCHANGED) {
-				mouse.operation = MOUSE_MOTION_EVENT;
-				mouse.u.data.buttons = action2.button;
-				if (rodent.accel.is_exponential) {
-					expoacc(action2.dx, action2.dy, action2.dz,
-					    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
-				} else {
-					linacc(action2.dx, action2.dy, action2.dz,
-					    &mouse.u.data.x, &mouse.u.data.y, &mouse.u.data.z);
-				}
-				if (debug < 2 && !paused)
-					ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
-			}
-
-			/*
-			 * If the Z axis movement is mapped to an imaginary physical
-			 * button, we need to cook up a corresponding button `up' event
-			 * after sending a button `down' event.
-			 */
-			if ((rodent.zmap[0] > 0) && (action.dz != 0)) {
-				action.obutton = action.button;
-				action.dx = action.dy = action.dz = 0;
-				r_map(&action, &action2);
-				debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
-				    action2.button, action2.dx, action2.dy, action2.dz);
-
-				r_click(&action2);
-			}
+			r_click(&action2);
 		}
 	}
 	/* NOT REACHED */
