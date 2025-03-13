@@ -242,7 +242,7 @@ struct tpinfo {
 	int	softbutton3_x;		/* Horizontal offset of 3-rd softbutton left edge */
 };
 
-static struct gesture_state {
+struct tpstate {
 	int 		start_x;
 	int 		start_y;
 	int 		prev_x;
@@ -257,8 +257,6 @@ static struct gesture_state {
 	struct timespec	taptimeout;     /* tap timeout for touchpads */
 	struct timespec	startdelay;
 	int		idletimeout;
-} gesture = {
-	.idletimeout = -1,
 };
 
 struct finger {
@@ -347,6 +345,7 @@ static struct rodentparam {
 	struct scroll scroll;	/* virtual scroll state */
 	struct tpcaps tphw;	/* touchpad capabilities */
 	struct tpinfo tpinfo;	/* touchpad gesture parameters */
+	struct tpstate gest;	/* touchpad gesture state */
 } rodent = {
 	.flags = 0,
 	.dev.path = NULL,
@@ -377,6 +376,9 @@ static struct rodentparam {
 		.vscroll_min_delta = 1.25,	/* mm */
 		.vscroll_hor_area = 0.0,	/* mm */
 		.vscroll_ver_area = -15.0,	/* mm */
+	},
+	.gest = {
+		.idletimeout = -1,
 	},
 };
 
@@ -859,12 +861,12 @@ moused(void)
 			timeout = 20;
 			timeout_em3b = true;
 		}
-		if (gesture.idletimeout != -1) {
-			if (timeout == -1 || gesture.idletimeout < timeout) {
-				timeout = gesture.idletimeout;
+		if (rodent.gest.idletimeout != -1) {
+			if (timeout == -1 || rodent.gest.idletimeout < timeout) {
+				timeout = rodent.gest.idletimeout;
 				timeout_em3b = false;
 			} else
-				gesture.idletimeout -= timeout;
+				rodent.gest.idletimeout -= timeout;
 		}
 
 		c = poll(&fds, 1, timeout);
@@ -902,7 +904,7 @@ moused(void)
 				b.code = SYN_REPORT;
 				b.value = 1;
 			}
-			gesture.idletimeout = -1;
+			rodent.gest.idletimeout = -1;
 			flags = r_protocol(&b, &action0);
 			if (flags == 0)
 				continue;
@@ -2125,7 +2127,7 @@ static enum gesture
 r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
     mousestatus_t *ms)
 {
-	struct gesture_state *gest = &gesture;
+	struct tpstate *gest = &rodent.gest;
 	struct tpcaps *tphw = &rodent.tphw;
 	struct tpinfo *tpinfo = &rodent.tpinfo;
 	int tap_timeout = tpinfo->tap_timeout;
