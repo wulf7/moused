@@ -334,6 +334,26 @@ strv_from_string(const char *in, const char *separators, size_t *num_elements)
 }
 
 /**
+ * Iterate through strv, calling func with each string and its respective index.
+ * Iteration stops successfully after max elements or at the last element,
+ * whichever occurs first.
+ *
+ * If func returns non-zero, iteration stops and strv_for_each returns
+ * that value.
+ *
+ * @return zero on success, otherwise the error returned by the callback
+ */
+int strv_for_each_n(const char **strv, size_t max, strv_foreach_callback_t func, void *data)
+{
+	for (size_t i = 0; i < max && strv && strv[i]; i++) {
+		int ret = func(strv[i], i, data);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+/**
  * Return true if str ends in suffix, false otherwise. If the suffix is the
  * empty string, strendswith() always returns false.
  */

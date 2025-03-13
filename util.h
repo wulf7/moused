@@ -83,6 +83,7 @@ struct input_prop {
  */
 typedef void moused_log_handler(int priority, int errnum,
 				const char *format, va_list args);
+typedef int strv_foreach_callback_t(const char *str, size_t index, void *data);
 
 bool	streq(const char *str1, const char *str2);
 bool	strneq(const char *str1, const char *str2, int n);
@@ -107,6 +108,8 @@ void	strv_free(char **strv);
 const char *next_word(const char **state, size_t *len, const char *separators);
 char **	strv_from_string(const char *in, const char *separators,
 	    size_t *num_elements);
+int	strv_for_each_n(const char **strv, size_t max,
+	    strv_foreach_callback_t func, void *data);
 bool	strendswith(const char *str, const char *suffix);
 bool	strstartswith(const char *str, const char *prefix);
 bool	parse_dimension_property(const char *prop, size_t *w, size_t *h);
