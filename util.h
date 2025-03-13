@@ -108,6 +108,7 @@ const char *next_word(const char **state, size_t *len, const char *separators);
 char **	strv_from_string(const char *in, const char *separators,
 	    size_t *num_elements);
 bool	strendswith(const char *str, const char *suffix);
+bool	strstartswith(const char *str, const char *prefix);
 bool	parse_dimension_property(const char *prop, size_t *w, size_t *h);
 bool	parse_range_property(const char *prop, int *hi, int *lo);
 bool	parse_boolean_property(const char *prop, bool *b);

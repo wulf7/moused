@@ -351,7 +351,7 @@ strendswith(const char *str, const char *suffix)
 	return strneq(&str[offset], suffix, suffixlen);
 }
 
-static inline bool
+bool
 strstartswith(const char *str, const char *prefix)
 {
 	if (str == NULL)
