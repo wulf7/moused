@@ -172,7 +172,7 @@ static int	identify = ID_NONE;
 static const char *devpath = NULL;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
-static const char *config_file = CONFSDIR "/moused.conf";
+static const char *config_file = CONFDIR "/moused.conf";
 static const char *quirks_path = QUIRKSDIR;
 static struct quirks_context *quirks;
 

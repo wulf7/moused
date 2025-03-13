@@ -20,7 +20,7 @@ SRCS=		moused.c \
 		util-list.c \
 		util-list.h
 
-CFLAGS+=	-DCONFSDIR=\"${CONFSDIR}\" -DQUIRKSDIR=\"${FILESDIR}\"
+CFLAGS+=	-DCONFDIR=\"${MOUSEDDIR}\" -DQUIRKSDIR=\"${FILESDIR}\"
 LDADD=		-lm -lutil
 BINDIR?=	${PREFIX}/sbin
 
