@@ -15,6 +15,7 @@
 #include <xlocale.h>
 
 #include "util.h"
+#include "util-evdev.h"
 #include "util-list.h"
 
 #define	HAVE_LOCALE_H	1
@@ -326,6 +327,17 @@ strendswith(const char *str, const char *suffix)
 	return strneq(&str[offset], suffix, suffixlen);
 }
 
+static inline bool
+strstartswith(const char *str, const char *prefix)
+{
+	if (str == NULL)
+		return false;
+
+	size_t prefixlen = strlen(prefix);
+
+	return prefixlen > 0 ? strneq(str, prefix, strlen(prefix)) : false;
+}
+
 /**
  * Parses a simple dimension string in the form of "10x40". The two
  * numbers must be positive integers in decimal notation.
@@ -408,20 +420,184 @@ parse_boolean_property(const char *prop, bool *b)
 	return true;
 }
 
-/*
- * NOT IMPLEMENTED
+static bool
+parse_evcode_string(const char *s, int *type_out, int *code_out)
+{
+	int type, code;
+
+	if (strstartswith(s, "EV_")) {
+		type = libevdev_event_type_from_name(s);
+		if (type == -1)
+			return false;
+
+		code = EVENT_CODE_UNDEFINED;
+	} else {
+		struct map {
+			const char *str;
+			int type;
+		} map[] = {
+			{ "KEY_", EV_KEY },
+			{ "BTN_", EV_KEY },
+			{ "ABS_", EV_ABS },
+			{ "REL_", EV_REL },
+			{ "SW_", EV_SW },
+		};
+		bool found = false;
+
+		ARRAY_FOR_EACH(map, m) {
+			if (!strstartswith(s, m->str))
+				continue;
+
+			type = m->type;
+			code = libevdev_event_code_from_name(type, s);
+			if (code == -1)
+				return false;
+
+			found = true;
+			break;
+		}
+		if (!found)
+			return false;
+	}
+
+	*type_out = type;
+	*code_out = code;
+
+	return true;
+}
+
+/**
+ * Parses a string of the format "+EV_ABS;+KEY_A;-BTN_TOOL_DOUBLETAP;-ABS_X;"
+ * where each element must be + or - (enable/disable) followed by a named event
+ * type OR a named event code OR a tuple in the form of EV_KEY:0x123, i.e. a
+ * named event type followed by a hex event code.
+ *
+ * events must point to an existing array of size nevents.
+ * nevents specifies the size of the array in events and returns the number
+ * of items, elements exceeding nevents are simply ignored, just make sure
+ * events is large enough for your use-case.
+ *
+ * The results are returned as input events with type and code set, all
+ * other fields undefined. Where only the event type is specified, the code
+ * is set to EVENT_CODE_UNDEFINED.
+ *
+ * On success, events contains nevents events with each event's value set to 1
+ * or 0 depending on the + or - prefix.
  */
 bool
 parse_evcode_property(const char *prop, struct input_event *events, size_t *nevents)
 {
-	return true;
+	bool rc = false;
+	/* A randomly chosen max so we avoid crazy quirks */
+	struct input_event evs[32];
+
+	memset(evs, 0, sizeof evs);
+
+	size_t ncodes;
+	char **strv = strv_from_string(prop, ";", &ncodes);
+	if (!strv || ncodes == 0 || ncodes > ARRAY_LENGTH(evs))
+		goto out;
+
+	ncodes = min(*nevents, ncodes);
+	for (size_t idx = 0; strv[idx]; idx++) {
+		char *s = strv[idx];
+		bool enable;
+
+		switch (*s) {
+		case '+': enable = true; break;
+		case '-': enable = false; break;
+		default:
+			goto out;
+		}
+
+		s++;
+
+		int type, code;
+
+		if (strstr(s, ":") == NULL) {
+			if (!parse_evcode_string(s, &type, &code))
+				goto out;
+		} else {
+			int consumed;
+			char stype[13] = {0}; /* EV_FF_STATUS + '\0' */
+
+			if (sscanf(s, "%12[A-Z_]:%x%n", stype, &code, &consumed) != 2 ||
+			    strlen(s) != (size_t)consumed ||
+			    (type = libevdev_event_type_from_name(stype)) == -1 ||
+			    code < 0 || code > libevdev_event_type_get_max(type))
+			    goto out;
+		}
+
+		evs[idx].type = type;
+		evs[idx].code = code;
+		evs[idx].value = enable;
+	}
+
+	memcpy(events, evs, ncodes * sizeof *events);
+	*nevents = ncodes;
+	rc = true;
+
+out:
+	strv_free(strv);
+	return rc;
 }
 
-/*
- * NOT IMPLEMENTED
+/**
+ * Parses a string of the format "+INPUT_PROP_BUTTONPAD;-INPUT_PROP_POINTER;+0x123;"
+ * where each element must be a named input prop OR a hexcode in the form
+ * 0x1234. The prefix for each element must be either '+' (enable) or '-' (disable).
+ *
+ * props must point to an existing array of size nprops.
+ * nprops specifies the size of the array in props and returns the number
+ * of elements, elements exceeding nprops are simply ignored, just make sure
+ * props is large enough for your use-case.
+ *
+ * On success, props contains nprops elements.
  */
 bool
 parse_input_prop_property(const char *prop, struct input_prop *props_out, size_t *nprops)
 {
-	return true;
+	bool rc = false;
+	struct input_prop props[INPUT_PROP_CNT]; /* doubling up on quirks is a bug */
+
+	size_t count;
+	char **strv = strv_from_string(prop, ";", &count);
+	if (!strv || count == 0 || count > ARRAY_LENGTH(props))
+		goto out;
+
+	count = min(*nprops, count);
+	for (size_t idx = 0; strv[idx]; idx++) {
+		char *s = strv[idx];
+		unsigned int prop;
+		bool enable;
+
+		switch (*s) {
+		case '+': enable = true; break;
+		case '-': enable = false; break;
+		default:
+			goto out;
+		}
+
+		s++;
+
+		if (safe_atou_base(s, &prop, 16)) {
+			if (prop > INPUT_PROP_MAX)
+				goto out;
+		} else {
+			int val = libevdev_property_from_name(s);
+			if (val == -1)
+				goto out;
+			prop = (unsigned int)val;
+		}
+		props[idx].prop = prop;
+		props[idx].enabled = enable;
+	}
+
+	memcpy(props_out, props, count * sizeof *props);
+	*nprops = count;
+	rc = true;
+
+out:
+	strv_free(strv);
+	return rc;
 }

@@ -9,7 +9,17 @@ PREFIX?=	${LOCALBASE}
 
 QUIRKS=	10-generic-touchpad.quirks
 
-SRCS=		moused.c quirks.c quirks.h util.c util.h util-list.c util-list.h
+SRCS=		moused.c \
+		event-names.h \
+		quirks.c \
+		quirks.h \
+		util.c \
+		util.h \
+		util-evdev.c \
+		util-evdev.h \
+		util-list.c \
+		util-list.h
+
 CFLAGS+=	-DCONFSDIR=\"${CONFSDIR}\" -DQUIRKSDIR=\"${FILESDIR}\"
 LDADD=		-lm -lutil
 BINDIR?=	${PREFIX}/sbin
