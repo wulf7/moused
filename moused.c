@@ -288,8 +288,10 @@ struct button_state {
 };
 
 struct btstate {
+	long 			clickthreshold;	/* double click speed in msec */
 	struct button_state	bstate[MOUSE_MAXBUTTON]; /* button state */
 	struct button_state	*mstate[MOUSE_MAXBUTTON];/* mapped button st.*/
+	int			zmap[4];/* MOUSE_{X|Y}AXIS or a button number */
 	struct button_state	zstate[4];		 /* Z/W axis state */
 };
 
@@ -397,11 +399,9 @@ struct accel {
 static struct rodentparam {
 	struct device dev;	/* Device */
 	struct quirks *quirks;	/* Configuration file and quirks */
-	int zmap[4];		/* MOUSE_{X|Y}AXIS or a button number */
 	int wmode;		/* wheel mode button number */
 	int mfd;		/* mouse file descriptor */
 	int cfd;		/* /dev/consolectl file descriptor */
-	long clickthreshold;	/* double click speed in msec */
 	struct btstate btstate;	/* button status */
 	struct e3bstate e3b;	/* 3 button emulation state */
 	struct drift drift;
@@ -415,11 +415,13 @@ static struct rodentparam {
 	.dev.path = NULL,
 	.dev.type = DEVICE_TYPE_UNKNOWN,
 	.quirks = NULL,
-	.zmap = { 0, 0, 0, 0 },
 	.wmode = 0,
 	.mfd = -1,
 	.cfd = -1,
-	.clickthreshold = DFLT_CLICKTHRESHOLD,
+	.btstate = {
+		.clickthreshold = DFLT_CLICKTHRESHOLD,
+		.zmap = { 0, 0, 0, 0 },
+	},
 	.e3b = {
 		.button2timeout = DFLT_BUTTON2TIMEOUT,
 	},
@@ -582,11 +584,11 @@ main(int argc, char *argv[])
 
 		case 'z':
 			if (strcmp(optarg, "x") == 0) {
-				rodent.zmap[0] = MOUSE_XAXIS;
+				rodent.btstate.zmap[0] = MOUSE_XAXIS;
 				break;
 			}
 			if (strcmp(optarg, "y") == 0) {
-				rodent.zmap[0] = MOUSE_YAXIS;
+				rodent.btstate.zmap[0] = MOUSE_YAXIS;
 				break;
 			}
 			i = atoi(optarg);
@@ -598,8 +600,8 @@ main(int argc, char *argv[])
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
-			rodent.zmap[0] = i;
-			rodent.zmap[1] = i + 1;
+			rodent.btstate.zmap[0] = i;
+			rodent.btstate.zmap[1] = i + 1;
 			debug("optind: %d, optarg: '%s'", optind, optarg);
 			for (j = 1; j < 4; ++j) {
 				if ((optind >= argc) || !isdigit(*argv[optind]))
@@ -610,17 +612,19 @@ main(int argc, char *argv[])
 					    argv[optind]);
 					usage();
 				}
-				rodent.zmap[j] = i;
+				rodent.btstate.zmap[j] = i;
 				++optind;
 			}
-			if ((rodent.zmap[2] != 0) && (rodent.zmap[3] == 0))
-				rodent.zmap[3] = rodent.zmap[2] + 1;
+			if ((rodent.btstate.zmap[2] != 0) &&
+			    (rodent.btstate.zmap[3] == 0))
+				rodent.btstate.zmap[3] =
+				    rodent.btstate.zmap[2] + 1;
 			break;
 
 		case 'C':
-			rodent.clickthreshold = atoi(optarg);
-			if ((rodent.clickthreshold < 0) ||
-			    (rodent.clickthreshold > MAX_CLICKTHRESHOLD)) {
+			rodent.btstate.clickthreshold = atoi(optarg);
+			if ((rodent.btstate.clickthreshold < 0) ||
+			    (rodent.btstate.clickthreshold > MAX_CLICKTHRESHOLD)) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
@@ -975,7 +979,7 @@ moused(void)
 		 * button, we need to cook up a corresponding button `up' event
 		 * after sending a button `down' event.
 		 */
-		if ((rodent.zmap[0] > 0) && (action.dz != 0)) {
+		if ((rodent.btstate.zmap[0] > 0) && (action.dz != 0)) {
 			action.obutton = action.button;
 			action.dx = action.dy = action.dz = 0;
 			r_map(&action, &action2);
@@ -1154,17 +1158,16 @@ r_init_buttons(void)
 	struct btstate *bt = &rodent.btstate;
 	struct e3bstate *e3b = &rodent.e3b;
 	struct timespec ts;
-	int *zmap = rodent.zmap;
 	int i, j;
 
 	/* fix Z axis mapping */
 	for (i = 0; i < 4; ++i) {
-		if (rodent.zmap[i] > 0) {
+		if (bt->zmap[i] > 0) {
 			for (j = 0; j < MOUSE_MAXBUTTON; ++j) {
-				if (bt->mstate[j] == &bt->bstate[zmap[i] - 1])
+				if (bt->mstate[j] == &bt->bstate[bt->zmap[i] - 1])
 					bt->mstate[j] = &bt->zstate[i];
 			}
-			zmap[i] = 1 << (zmap[i] - 1);
+			bt->zmap[i] = 1 << (bt->zmap[i] - 1);
 		}
 	}
 
@@ -1965,7 +1968,7 @@ r_map(mousestatus_t *act1, mousestatus_t *act2)
 	act2->dy = act1->dy;
 	act2->dz = act1->dz;
 
-	switch (rodent.zmap[0]) {
+	switch (bt->zmap[0]) {
 	case 0:	/* do nothing */
 		break;
 	case MOUSE_XAXIS:
@@ -1981,19 +1984,19 @@ r_map(mousestatus_t *act1, mousestatus_t *act2)
 		}
 		break;
 	default:	/* buttons */
-		pbuttons &= ~(rodent.zmap[0] | rodent.zmap[1]
-			    | rodent.zmap[2] | rodent.zmap[3]);
-		if ((act1->dz < -1) && rodent.zmap[2]) {
-			pbuttons |= rodent.zmap[2];
+		pbuttons &= ~(bt->zmap[0] | bt->zmap[1]
+			    | bt->zmap[2] | bt->zmap[3]);
+		if ((act1->dz < -1) && bt->zmap[2]) {
+			pbuttons |= bt->zmap[2];
 			bt->zstate[2].count = 1;
 		} else if (act1->dz < 0) {
-			pbuttons |= rodent.zmap[0];
+			pbuttons |= bt->zmap[0];
 			bt->zstate[0].count = 1;
-		} else if ((act1->dz > 1) && rodent.zmap[3]) {
-			pbuttons |= rodent.zmap[3];
+		} else if ((act1->dz > 1) && bt->zmap[3]) {
+			pbuttons |= bt->zmap[3];
 			bt->zstate[3].count = 1;
 		} else if (act1->dz > 0) {
-			pbuttons |= rodent.zmap[1];
+			pbuttons |= bt->zmap[1];
 			bt->zstate[1].count = 1;
 		}
 		act2->dz = 0;
@@ -2033,7 +2036,7 @@ r_timestamp(mousestatus_t *act)
 	rodent.drift.current_ts = ts1;
 
 	/* double click threshold */
-	ts = tssubms(&ts1, rodent.clickthreshold);
+	ts = tssubms(&ts1, bt->clickthreshold);
 	debug("ts:  %jd %ld", (intmax_t)ts.tv_sec, ts.tv_nsec);
 
 	/* 3 button emulation timeout */
