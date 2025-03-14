@@ -267,7 +267,7 @@ struct finger {
 	int	id;	/* id=0 - no touch, id>1 - touch id */
 };
 
-static struct evdev_state {
+struct evstate {
 	int		buttons;
 	/* Relative */
 	int		dx;
@@ -282,7 +282,7 @@ static struct evdev_state {
 	/* Absolute multi-touch */
 	int		slot;
 	struct finger	mt[MAX_FINGERS];
-} ev;
+};
 
 enum scroll_state {
 	SCROLL_NOTSCROLLING,
@@ -346,6 +346,7 @@ static struct rodentparam {
 	struct tpcaps tphw;	/* touchpad capabilities */
 	struct tpinfo tpinfo;	/* touchpad gesture parameters */
 	struct tpstate gest;	/* touchpad gesture state */
+	struct evstate ev;	/* event device state */
 } rodent = {
 	.flags = 0,
 	.dev.path = NULL,
@@ -1435,6 +1436,7 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 {
 	struct tpcaps *tphw = &rodent.tphw;
 	struct tpinfo *tpinfo = &rodent.tpinfo;
+	struct evstate *ev = &rodent.ev;
 
 	static int butmapev[8] = {	/* evdev */
 	    0,
@@ -1457,16 +1459,16 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	case EV_REL:
 		switch (ie->code) {
 		case REL_X:
-			ev.dx += ie->value;
+			ev->dx += ie->value;
 			break;
 		case REL_Y:
-			ev.dy += ie->value;
+			ev->dy += ie->value;
 			break;
 		case REL_WHEEL:
-			ev.dz += ie->value;
+			ev->dz += ie->value;
 			break;
 		case REL_HWHEEL:
-			ev.dw += ie->value;
+			ev->dw += ie->value;
 			break;
 		}
 		break;
@@ -1474,48 +1476,48 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 		switch (ie->code) {
 		case ABS_X:
 			if (!tphw->is_mt)
-				ev.dx += ie->value - ev.st.x;
-			ev.st.x = ie->value;
+				ev->dx += ie->value - ev->st.x;
+			ev->st.x = ie->value;
 			break;
 		case ABS_Y:
 			if (!tphw->is_mt)
-				ev.dy += ie->value - ev.st.y;
-			ev.st.y = ie->value;
+				ev->dy += ie->value - ev->st.y;
+			ev->st.y = ie->value;
 			break;
 		case ABS_PRESSURE:
-			ev.st.p = ie->value;
+			ev->st.p = ie->value;
 			break;
 		case ABS_TOOL_WIDTH:
-			ev.st.w = ie->value;
+			ev->st.w = ie->value;
 			break;
 		case ABS_MT_SLOT:
 			if (tphw->is_mt)
-				ev.slot = ie->value;
+				ev->slot = ie->value;
 			break;
 		case ABS_MT_TRACKING_ID:
 			if (tphw->is_mt &&
-			    ev.slot >= 0 && ev.slot < MAX_FINGERS) {
-				if (ie->value != -1 && ev.mt[ev.slot].id > 0 &&
-				    ie->value + 1 != ev.mt[ev.slot].id) {
+			    ev->slot >= 0 && ev->slot < MAX_FINGERS) {
+				if (ie->value != -1 && ev->mt[ev->slot].id > 0 &&
+				    ie->value + 1 != ev->mt[ev->slot].id) {
 					debug("tracking id changed %d->%d",
-					    ie->value, ev.mt[ev.slot].id - 1);
-					ev.mt[ev.slot].id = 0;
+					    ie->value, ev->mt[ev->slot].id - 1);
+					ev->mt[ev->slot].id = 0;
 				} else
-					ev.mt[ev.slot].id = ie->value + 1;
+					ev->mt[ev->slot].id = ie->value + 1;
 			}
 			break;
 		case ABS_MT_POSITION_X:
 			if (tphw->is_mt &&
-			    ev.slot >= 0 && ev.slot < MAX_FINGERS) {
-				ev.dx += ie->value - ev.mt[ev.slot].x;
-				ev.mt[ev.slot].x = ie->value;
+			    ev->slot >= 0 && ev->slot < MAX_FINGERS) {
+				ev->dx += ie->value - ev->mt[ev->slot].x;
+				ev->mt[ev->slot].x = ie->value;
 			}
 			break;
 		case ABS_MT_POSITION_Y:
 			if (tphw->is_mt &&
-			    ev.slot >= 0 && ev.slot < MAX_FINGERS) {
-				ev.dy += ie->value - ev.mt[ev.slot].y;
-				ev.mt[ev.slot].y = ie->value;
+			    ev->slot >= 0 && ev->slot < MAX_FINGERS) {
+				ev->dy += ie->value - ev->mt[ev->slot].y;
+				ev->mt[ev->slot].y = ie->value;
 			}
 			break;
 		}
@@ -1523,26 +1525,26 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	case EV_KEY:
 		switch (ie->code) {
 		case BTN_TOUCH:
-			ev.st.id = ie->value != 0 ? 1 : 0;
+			ev->st.id = ie->value != 0 ? 1 : 0;
 			break;
 		case BTN_TOOL_FINGER:
-			ev.nfingers = ie->value != 0 ? 1 : ev.nfingers;
+			ev->nfingers = ie->value != 0 ? 1 : ev->nfingers;
 			break;
 		case BTN_TOOL_DOUBLETAP:
-			ev.nfingers = ie->value != 0 ? 2 : ev.nfingers;
+			ev->nfingers = ie->value != 0 ? 2 : ev->nfingers;
 			break;
 		case BTN_TOOL_TRIPLETAP:
-			ev.nfingers = ie->value != 0 ? 3 : ev.nfingers;
+			ev->nfingers = ie->value != 0 ? 3 : ev->nfingers;
 			break;
 		case BTN_TOOL_QUADTAP:
-			ev.nfingers = ie->value != 0 ? 4 : ev.nfingers;
+			ev->nfingers = ie->value != 0 ? 4 : ev->nfingers;
 			break;
 		case BTN_TOOL_QUINTTAP:
-			ev.nfingers = ie->value != 0 ? 5 : ev.nfingers;
+			ev->nfingers = ie->value != 0 ? 5 : ev->nfingers;
 			break;
 		case BTN_LEFT ... BTN_LEFT + 7:
-			ev.buttons &= ~(1 << (ie->code - BTN_LEFT));
-			ev.buttons |= ((!!ie->value) << (ie->code - BTN_LEFT));
+			ev->buttons &= ~(1 << (ie->code - BTN_LEFT));
+			ev->buttons |= ((!!ie->value) << (ie->code - BTN_LEFT));
 			break;
 		}
 		break;
@@ -1559,66 +1561,66 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	ietime.tv_sec = ie->time.tv_sec;
 	ietime.tv_nsec = ie->time.tv_usec * 1000;
 
-	if (!tphw->cap_pressure && ev.st.id != 0)
-		ev.st.p = MAX(tpinfo->min_pressure_hi, tpinfo->tap_threshold);
-	if (tphw->cap_touch && ev.st.id == 0)
-		ev.st.p = 0;
+	if (!tphw->cap_pressure && ev->st.id != 0)
+		ev->st.p = MAX(tpinfo->min_pressure_hi, tpinfo->tap_threshold);
+	if (tphw->cap_touch && ev->st.id == 0)
+		ev->st.p = 0;
 
 	act->obutton = act->button;
-	act->button = butmapev[ev.buttons & MOUSE_SYS_STDBUTTONS];
-	act->button |= (ev.buttons & ~MOUSE_SYS_STDBUTTONS);
+	act->button = butmapev[ev->buttons & MOUSE_SYS_STDBUTTONS];
+	act->button |= (ev->buttons & ~MOUSE_SYS_STDBUTTONS);
 
 	/* Convert cumulative to average movement in MT case */
 	if (tphw->is_mt) {
 		active = 0;
 		for (i = 0; i < MAX_FINGERS; i++)
-			if (ev.mt[i].id != 0)
+			if (ev->mt[i].id != 0)
 				active++;
 		/* Do not count finger holding a click as active */
-		if (tphw->is_clickpad && ev.buttons != 0)
+		if (tphw->is_clickpad && ev->buttons != 0)
 			active--;
 		if (active > 1) {
 			/* XXX: We should dynamically update rodent.accel */
-			ev.dx /= active;
-			ev.dy /= active;
+			ev->dx /= active;
+			ev->dy /= active;
 		}
 	}
 
 	if (rodent.dev.type == DEVICE_TYPE_TOUCHPAD) {
 		if (debug > 1)
-			debug("absolute data %d,%d,%d,%d", ev.st.x, ev.st.y,
-			    ev.st.p, ev.st.w);
-		switch (r_gestures(ev.st.x, ev.st.y, ev.st.p, ev.st.w,
-		    ev.nfingers, &ietime, act)) {
+			debug("absolute data %d,%d,%d,%d", ev->st.x, ev->st.y,
+			    ev->st.p, ev->st.w);
+		switch (r_gestures(ev->st.x, ev->st.y, ev->st.p, ev->st.w,
+		    ev->nfingers, &ietime, act)) {
 		case GEST_IGNORE:
-			ev.dx = 0;
-			ev.dy = 0;
-			ev.dz = 0;
-			ev.acc_dx = ev.acc_dy = 0;
+			ev->dx = 0;
+			ev->dy = 0;
+			ev->dz = 0;
+			ev->acc_dx = ev->acc_dy = 0;
 			debug("gesture IGNORE");
 			break;
 		case GEST_ACCUMULATE:	/* Revertable pointer movement. */
-			ev.acc_dx += ev.dx;
-			ev.acc_dy += ev.dy;
-			debug("gesture ACCUMULATE %d,%d", ev.dx, ev.dy);
-			ev.dx = 0;
-			ev.dy = 0;
+			ev->acc_dx += ev->dx;
+			ev->acc_dy += ev->dy;
+			debug("gesture ACCUMULATE %d,%d", ev->dx, ev->dy);
+			ev->dx = 0;
+			ev->dy = 0;
 			break;
 		case GEST_MOVE:		/* Pointer movement. */
-			ev.dx += ev.acc_dx;
-			ev.dy += ev.acc_dy;
-			ev.acc_dx = ev.acc_dy = 0;
-			debug("gesture MOVE %d,%d", ev.dx, ev.dy);
+			ev->dx += ev->acc_dx;
+			ev->dy += ev->acc_dy;
+			ev->acc_dx = ev->acc_dy = 0;
+			debug("gesture MOVE %d,%d", ev->dx, ev->dy);
 			break;
 		case GEST_VSCROLL:	/* Vertical scrolling. */
 			if (tpinfo->natural_scroll)
-				ev.dz = -ev.dy;
+				ev->dz = -ev->dy;
 			else
-				ev.dz = ev.dy;
-			ev.dx = -ev.acc_dx;
-			ev.dy = -ev.acc_dy;
-			ev.acc_dx = ev.acc_dy = 0;
-			debug("gesture VSCROLL %d", ev.dz);
+				ev->dz = ev->dy;
+			ev->dx = -ev->acc_dx;
+			ev->dy = -ev->acc_dy;
+			ev->acc_dx = ev->acc_dy = 0;
+			debug("gesture VSCROLL %d", ev->dz);
 			break;
 		case GEST_HSCROLL:	/* Horizontal scrolling. */
 /*
@@ -1633,19 +1635,19 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 					    : MOUSE_BUTTON6DOWN;
 			}
 */
-			ev.dx = -ev.acc_dx;
-			ev.dy = -ev.acc_dy;
-			ev.acc_dx = ev.acc_dy = 0;
-			debug("gesture HSCROLL %d", ev.dw);
+			ev->dx = -ev->acc_dx;
+			ev->dy = -ev->acc_dy;
+			ev->acc_dx = ev->acc_dy = 0;
+			debug("gesture HSCROLL %d", ev->dw);
 			break;
 		}
 	}
 
-	debug("assembled full packet %d,%d,%d", ev.dx, ev.dy, ev.dz);
-	act->dx = ev.dx;
-	act->dy = ev.dy;
-	act->dz = ev.dz;
-	ev.dx = ev.dy = ev.dz = ev.dw = 0;
+	debug("assembled full packet %d,%d,%d", ev->dx, ev->dy, ev->dz);
+	act->dx = ev->dx;
+	act->dy = ev->dy;
+	act->dz = ev->dz;
+	ev->dx = ev->dy = ev->dz = ev->dw = 0;
 
 	/*
 	 * We don't reset pBufP here yet, as there may be an additional data
