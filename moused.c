@@ -89,7 +89,6 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 #define MOUSE_YAXIS	(-2)
 
 #define	ChordMiddle	0x0001
-#define Emulate3Button	0x0002
 
 #define	MAX_FINGERS	10
 
@@ -296,6 +295,61 @@ struct btstate {
 	struct button_state	zstate[4];		 /* Z/W axis state */
 };
 
+/* state machine for 3 button emulation */
+
+enum bt3_emul_state {
+	S0,		/* start */
+	S1,		/* button 1 delayed down */
+	S2,		/* button 3 delayed down */
+	S3,		/* both buttons down -> button 2 down */
+	S4,		/* button 1 delayed up */
+	S5,		/* button 1 down */
+	S6,		/* button 3 down */
+	S7,		/* both buttons down */
+	S8,		/* button 3 delayed up */
+	S9,		/* button 1 or 3 up after S3 */
+};
+
+#define A(b1, b3)	(((b1) ? 2 : 0) | ((b3) ? 1 : 0))
+#define A_TIMEOUT	4
+#define S_DELAYED(st)	(states[st].s[A_TIMEOUT] != (st))
+
+static const struct {
+	enum bt3_emul_state s[A_TIMEOUT + 1];
+	int buttons;
+	int mask;
+	bool timeout;
+} states[10] = {
+    /* S0 */
+    { { S0, S2, S1, S3, S0 }, 0, ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN), false },
+    /* S1 */
+    { { S4, S2, S1, S3, S5 }, 0, ~MOUSE_BUTTON1DOWN, false },
+    /* S2 */
+    { { S8, S2, S1, S3, S6 }, 0, ~MOUSE_BUTTON3DOWN, false },
+    /* S3 */
+    { { S0, S9, S9, S3, S3 }, MOUSE_BUTTON2DOWN, ~0, false },
+    /* S4 */
+    { { S0, S2, S1, S3, S0 }, MOUSE_BUTTON1DOWN, ~0, true },
+    /* S5 */
+    { { S0, S2, S5, S7, S5 }, MOUSE_BUTTON1DOWN, ~0, false },
+    /* S6 */
+    { { S0, S6, S1, S7, S6 }, MOUSE_BUTTON3DOWN, ~0, false },
+    /* S7 */
+    { { S0, S6, S5, S7, S7 }, MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN, ~0, false },
+    /* S8 */
+    { { S0, S2, S1, S3, S0 }, MOUSE_BUTTON3DOWN, ~0, true },
+    /* S9 */
+    { { S0, S9, S9, S3, S9 }, 0, ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN), false },
+};
+
+struct e3bstate {
+	bool enabled;
+	long button2timeout;	/* 3 button emulation timeout */
+	enum bt3_emul_state	mouse_button_state;
+	struct timespec		mouse_button_state_ts;
+	int			mouse_move_delayed;
+};
+
 enum scroll_state {
 	SCROLL_NOTSCROLLING,
 	SCROLL_PREPARE,
@@ -351,8 +405,8 @@ static struct rodentparam {
 	int mfd;		/* mouse file descriptor */
 	int cfd;		/* /dev/consolectl file descriptor */
 	long clickthreshold;	/* double click speed in msec */
-	long button2timeout;	/* 3 button emulation timeout */
 	struct btstate btstate;	/* button status */
+	struct e3bstate e3b;	/* 3 button emulation state */
 	struct drift drift;
 	struct accel accel;	/* cursor acceleration state */
 	struct scroll scroll;	/* virtual scroll state */
@@ -370,7 +424,9 @@ static struct rodentparam {
 	.mfd = -1,
 	.cfd = -1,
 	.clickthreshold = DFLT_CLICKTHRESHOLD,
-	.button2timeout = DFLT_BUTTON2TIMEOUT,
+	.e3b = {
+		.button2timeout = DFLT_BUTTON2TIMEOUT,
+	},
 	.scroll = {
 		.threshold = DFLT_SCROLLTHRESHOLD,
 		.speed = DFLT_SCROLLSPEED,
@@ -395,56 +451,6 @@ static struct rodentparam {
 		.idletimeout = -1,
 	},
 };
-
-/* state machine for 3 button emulation */
-
-enum bt3_emul_state {
-	S0,		/* start */
-	S1,		/* button 1 delayed down */
-	S2,		/* button 3 delayed down */
-	S3,		/* both buttons down -> button 2 down */
-	S4,		/* button 1 delayed up */
-	S5,		/* button 1 down */
-	S6,		/* button 3 down */
-	S7,		/* both buttons down */
-	S8,		/* button 3 delayed up */
-	S9,		/* button 1 or 3 up after S3 */
-};
-
-#define A(b1, b3)	(((b1) ? 2 : 0) | ((b3) ? 1 : 0))
-#define A_TIMEOUT	4
-#define S_DELAYED(st)	(states[st].s[A_TIMEOUT] != (st))
-
-static const struct {
-	enum bt3_emul_state s[A_TIMEOUT + 1];
-	int buttons;
-	int mask;
-	bool timeout;
-} states[10] = {
-    /* S0 */
-    { { S0, S2, S1, S3, S0 }, 0, ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN), false },
-    /* S1 */
-    { { S4, S2, S1, S3, S5 }, 0, ~MOUSE_BUTTON1DOWN, false },
-    /* S2 */
-    { { S8, S2, S1, S3, S6 }, 0, ~MOUSE_BUTTON3DOWN, false },
-    /* S3 */
-    { { S0, S9, S9, S3, S3 }, MOUSE_BUTTON2DOWN, ~0, false },
-    /* S4 */
-    { { S0, S2, S1, S3, S0 }, MOUSE_BUTTON1DOWN, ~0, true },
-    /* S5 */
-    { { S0, S2, S5, S7, S5 }, MOUSE_BUTTON1DOWN, ~0, false },
-    /* S6 */
-    { { S0, S6, S1, S7, S6 }, MOUSE_BUTTON3DOWN, ~0, false },
-    /* S7 */
-    { { S0, S6, S5, S7, S7 }, MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN, ~0, false },
-    /* S8 */
-    { { S0, S2, S1, S3, S0 }, MOUSE_BUTTON3DOWN, ~0, true },
-    /* S9 */
-    { { S0, S9, S9, S3, S9 }, 0, ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN), false },
-};
-static enum bt3_emul_state	mouse_button_state;
-static struct timespec	mouse_button_state_ts;
-static int		mouse_move_delayed;
 
 static jmp_buf env;
 
@@ -494,13 +500,13 @@ main(int argc, char *argv[])
 		switch(c) {
 
 		case '3':
-			rodent.flags |= Emulate3Button;
+			rodent.e3b.enabled = true;
 			break;
 
 		case 'E':
-			rodent.button2timeout = atoi(optarg);
-			if ((rodent.button2timeout < 0) ||
-			    (rodent.button2timeout > MAX_BUTTON2TIMEOUT)) {
+			rodent.e3b.button2timeout = atoi(optarg);
+			if ((rodent.e3b.button2timeout < 0) ||
+			    (rodent.e3b.button2timeout > MAX_BUTTON2TIMEOUT)) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
@@ -862,7 +868,8 @@ moused(void)
 		fds.events = POLLIN;
 		fds.revents = 0;
 		timeout = -1;
-		if ((rodent.flags & Emulate3Button) && S_DELAYED(mouse_button_state)) {
+		if (rodent.e3b.enabled &&
+		    S_DELAYED(rodent.e3b.mouse_button_state)) {
 			timeout = 20;
 			timeout_em3b = true;
 		}
@@ -1153,6 +1160,8 @@ static void
 r_init_buttons(void)
 {
 	struct btstate *bt = &rodent.btstate;
+	struct e3bstate *e3b = &rodent.e3b;
+	struct timespec ts;
 	int *zmap = rodent.zmap;
 	int i, j;
 
@@ -1167,16 +1176,19 @@ r_init_buttons(void)
 		}
 	}
 
-	mouse_button_state = S0;
-	clock_gettime(CLOCK_MONOTONIC_FAST, &mouse_button_state_ts);
-	mouse_move_delayed = 0;
+	clock_gettime(CLOCK_MONOTONIC_FAST, &ts);
+
+	e3b->mouse_button_state = S0;
+	e3b->mouse_button_state_ts = ts;
+	e3b->mouse_move_delayed = 0;
+
 	for (i = 0; i < MOUSE_MAXBUTTON; ++i) {
 		bt->bstate[i].count = 0;
-		bt->bstate[i].ts = mouse_button_state_ts;
+		bt->bstate[i].ts = ts;
 	}
 	for (i = 0; i < (int)(sizeof(bt->zstate) / sizeof(bt->zstate[0])); ++i) {
 		bt->zstate[i].count = 0;
-		bt->zstate[i].ts = mouse_button_state_ts;
+		bt->zstate[i].ts = ts;
 	}
 }
 
@@ -1825,6 +1837,7 @@ r_drift (struct drift *drift, mousestatus_t *act)
 static int
 r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
 {
+	struct e3bstate *e3b = &rodent.e3b;
 	bool changed;
 	int flags;
 
@@ -1836,11 +1849,11 @@ r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
 	a2->flags = a1->flags;
 	changed = false;
 
-	if (rodent.flags & Emulate3Button) {
+	if (e3b->enabled) {
 		if (debug > 2)
 			debug("state:%d, trans:%d -> state:%d",
-			    mouse_button_state, trans,
-			    states[mouse_button_state].s[trans]);
+			    e3b->mouse_button_state, trans,
+			    states[e3b->mouse_button_state].s[trans]);
 		/*
 		 * Avoid re-ordering button and movement events. While a button
 		 * event is deferred, throw away up to BUTTON2_MAXMOVE movement
@@ -1848,26 +1861,26 @@ r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
 		 * occur, then complete the deferred button events immediately.
 		 */
 		if ((a2->dx != 0 || a2->dy != 0) &&
-		    S_DELAYED(states[mouse_button_state].s[trans])) {
-			if (++mouse_move_delayed > BUTTON2_MAXMOVE) {
-				mouse_move_delayed = 0;
-				mouse_button_state =
-				    states[mouse_button_state].s[A_TIMEOUT];
+		    S_DELAYED(states[e3b->mouse_button_state].s[trans])) {
+			if (++e3b->mouse_move_delayed > BUTTON2_MAXMOVE) {
+				e3b->mouse_move_delayed = 0;
+				e3b->mouse_button_state =
+				    states[e3b->mouse_button_state].s[A_TIMEOUT];
 				changed = true;
 			} else
 				a2->dx = a2->dy = 0;
 		} else
-			mouse_move_delayed = 0;
-		if (mouse_button_state != states[mouse_button_state].s[trans])
+			e3b->mouse_move_delayed = 0;
+		if (e3b->mouse_button_state != states[e3b->mouse_button_state].s[trans])
 			changed = true;
 		if (changed)
 			clock_gettime(CLOCK_MONOTONIC_FAST,
-			   &mouse_button_state_ts);
-		mouse_button_state = states[mouse_button_state].s[trans];
+			   &e3b->mouse_button_state_ts);
+		e3b->mouse_button_state = states[e3b->mouse_button_state].s[trans];
 		a2->button &= ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN |
 		    MOUSE_BUTTON3DOWN);
-		a2->button &= states[mouse_button_state].mask;
-		a2->button |= states[mouse_button_state].buttons;
+		a2->button &= states[e3b->mouse_button_state].mask;
+		a2->button |= states[e3b->mouse_button_state].buttons;
 		flags = a2->flags & MOUSE_POSCHANGED;
 		flags |= a2->obutton ^ a2->button;
 		if (flags & MOUSE_BUTTON2DOWN) {
@@ -2008,6 +2021,7 @@ static void
 r_timestamp(mousestatus_t *act)
 {
 	struct btstate *bt = &rodent.btstate;
+	struct e3bstate *e3b = &rodent.e3b;
 	struct timespec ts;
 	struct timespec ts1;
 	struct timespec ts2;
@@ -2029,7 +2043,7 @@ r_timestamp(mousestatus_t *act)
 	debug("ts:  %jd %ld", (intmax_t)ts.tv_sec, ts.tv_nsec);
 
 	/* 3 button emulation timeout */
-	ts2 = tssubms(&ts1, rodent.button2timeout);
+	ts2 = tssubms(&ts1, e3b->button2timeout);
 
 	button = MOUSE_BUTTON1DOWN;
 	for (i = 0; (i < MOUSE_MAXBUTTON) && (mask != 0); ++i) {
@@ -2070,14 +2084,15 @@ r_timestamp(mousestatus_t *act)
 static bool
 r_timeout(void)
 {
+	struct e3bstate *e3b = &rodent.e3b;
 	struct timespec ts;
 	struct timespec ts1;
 
-	if (states[mouse_button_state].timeout)
+	if (states[e3b->mouse_button_state].timeout)
 		return (true);
 	clock_gettime(CLOCK_MONOTONIC_FAST, &ts1);
-	ts = tssubms(&ts1, rodent.button2timeout);
-	return (tscmp(&ts, &mouse_button_state_ts, >));
+	ts = tssubms(&ts1, e3b->button2timeout);
+	return (tscmp(&ts, &e3b->mouse_button_state_ts, >));
 }
 
 static void
