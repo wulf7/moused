@@ -474,6 +474,7 @@ static void	r_vscroll_detect(mousestatus_t *act);
 static void	r_vscroll(mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
 static bool	r_installmap(char *arg);
+static char *	r_installzmap(char *arg, char **argv, int argc, int* idx);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
 static void	r_timestamp(mousestatus_t *act);
 static bool	r_timeout(void);
@@ -490,6 +491,7 @@ main(int argc, char *argv[])
 	int c;
 	int	i;
 	int	j;
+	char *errstr;
 
 	for (i = 0; i < MOUSE_MAXBUTTON; ++i)
 		rodent.btstate.mstate[i] = &rodent.btstate.bstate[i];
@@ -584,42 +586,12 @@ main(int argc, char *argv[])
 			break;
 
 		case 'z':
-			if (strcmp(optarg, "x") == 0) {
-				rodent.btstate.zmap[0] = MOUSE_XAXIS;
-				break;
-			}
-			if (strcmp(optarg, "y") == 0) {
-				rodent.btstate.zmap[0] = MOUSE_YAXIS;
-				break;
-			}
-			i = atoi(optarg);
-			/*
-			 * Use button i for negative Z axis movement and
-			 * button (i + 1) for positive Z axis movement.
-			 */
-			if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
-				warnx("invalid argument `%s'", optarg);
+			errstr = r_installzmap(optarg, argv, argc, &optind);
+			if (errstr != NULL) {
+				warnx("%s", errstr);
+				free(errstr);
 				usage();
 			}
-			rodent.btstate.zmap[0] = i;
-			rodent.btstate.zmap[1] = i + 1;
-			debug("optind: %d, optarg: '%s'", optind, optarg);
-			for (j = 1; j < ZMAP_MAXBUTTON; ++j) {
-				if ((optind >= argc) || !isdigit(*argv[optind]))
-					break;
-				i = atoi(argv[optind]);
-				if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
-					warnx("invalid argument `%s'",
-					    argv[optind]);
-					usage();
-				}
-				rodent.btstate.zmap[j] = i;
-				++optind;
-			}
-			if ((rodent.btstate.zmap[2] != 0) &&
-			    (rodent.btstate.zmap[3] == 0))
-				rodent.btstate.zmap[3] =
-				    rodent.btstate.zmap[2] + 1;
 			break;
 
 		case 'C':
@@ -1943,6 +1915,50 @@ r_installmap(char *arg)
 	}
 
 	return (true);
+}
+
+static char *
+r_installzmap(char *arg, char **argv, int argc, int* idx)
+{
+	struct btstate *bt = &rodent.btstate;
+	char *errstr;
+	int i, j;
+
+	if (strcmp(arg, "x") == 0) {
+		bt->zmap[0] = MOUSE_XAXIS;
+		return (NULL);
+	}
+	if (strcmp(arg, "y") == 0) {
+		bt->zmap[0] = MOUSE_YAXIS;
+		return (NULL);
+	}
+	i = atoi(arg);
+	/*
+	 * Use button i for negative Z axis movement and
+	 * button (i + 1) for positive Z axis movement.
+	 */
+	if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
+		asprintf(&errstr, "invalid argument `%s'", optarg);
+		return (errstr);
+	}
+	bt->zmap[0] = i;
+	bt->zmap[1] = i + 1;
+	debug("optind: %d, optarg: '%s'", *idx, arg);
+	for (j = 1; j < ZMAP_MAXBUTTON; ++j) {
+		if ((*idx >= argc) || !isdigit(*argv[*idx]))
+			break;
+		i = atoi(argv[*idx]);
+		if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
+			asprintf(&errstr, "invalid argument `%s'", argv[*idx]);
+			return (errstr);
+		}
+		bt->zmap[j] = i;
+		++*idx;
+	}
+	if ((bt->zmap[2] != 0) && (bt->zmap[3] == 0))
+		bt->zmap[3] = bt->zmap[2] + 1;
+
+	return (NULL);
 }
 
 static void
