@@ -284,6 +284,18 @@ struct evstate {
 	struct finger	mt[MAX_FINGERS];
 };
 
+/* button status */
+struct button_state {
+	int count;	/* 0: up, 1: single click, 2: double click,... */
+	struct timespec ts;	/* timestamp on the last button event */
+};
+
+struct btstate {
+	struct button_state	bstate[MOUSE_MAXBUTTON]; /* button state */
+	struct button_state	*mstate[MOUSE_MAXBUTTON];/* mapped button st.*/
+	struct button_state	zstate[4];		 /* Z/W axis state */
+};
+
 enum scroll_state {
 	SCROLL_NOTSCROLLING,
 	SCROLL_PREPARE,
@@ -340,6 +352,7 @@ static struct rodentparam {
 	int cfd;		/* /dev/consolectl file descriptor */
 	long clickthreshold;	/* double click speed in msec */
 	long button2timeout;	/* 3 button emulation timeout */
+	struct btstate btstate;	/* button status */
 	struct drift drift;
 	struct accel accel;	/* cursor acceleration state */
 	struct scroll scroll;	/* virtual scroll state */
@@ -382,15 +395,6 @@ static struct rodentparam {
 		.idletimeout = -1,
 	},
 };
-
-/* button status */
-struct button_state {
-	int count;	/* 0: up, 1: single click, 2: double click,... */
-	struct timespec ts;	/* timestamp on the last button event */
-};
-static struct button_state	bstate[MOUSE_MAXBUTTON];	/* button state */
-static struct button_state	*mstate[MOUSE_MAXBUTTON];/* mapped button st.*/
-static struct button_state	zstate[4];		 /* Z/W axis state */
 
 /* state machine for 3 button emulation */
 
@@ -483,7 +487,7 @@ main(int argc, char *argv[])
 	int	j;
 
 	for (i = 0; i < MOUSE_MAXBUTTON; ++i)
-		mstate[i] = &bstate[i];
+		rodent.btstate.mstate[i] = &rodent.btstate.bstate[i];
 
 	while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:cdfghi:m:p:q:w:z:"))
 	    != -1) {
@@ -1148,16 +1152,18 @@ r_name(int type)
 static void
 r_init_buttons(void)
 {
+	struct btstate *bt = &rodent.btstate;
+	int *zmap = rodent.zmap;
 	int i, j;
 
 	/* fix Z axis mapping */
 	for (i = 0; i < 4; ++i) {
 		if (rodent.zmap[i] > 0) {
 			for (j = 0; j < MOUSE_MAXBUTTON; ++j) {
-				if (mstate[j] == &bstate[rodent.zmap[i] - 1])
-					mstate[j] = &zstate[i];
+				if (bt->mstate[j] == &bt->bstate[zmap[i] - 1])
+					bt->mstate[j] = &bt->zstate[i];
 			}
-			rodent.zmap[i] = 1 << (rodent.zmap[i] - 1);
+			zmap[i] = 1 << (zmap[i] - 1);
 		}
 	}
 
@@ -1165,12 +1171,12 @@ r_init_buttons(void)
 	clock_gettime(CLOCK_MONOTONIC_FAST, &mouse_button_state_ts);
 	mouse_move_delayed = 0;
 	for (i = 0; i < MOUSE_MAXBUTTON; ++i) {
-		bstate[i].count = 0;
-		bstate[i].ts = mouse_button_state_ts;
+		bt->bstate[i].count = 0;
+		bt->bstate[i].ts = mouse_button_state_ts;
 	}
-	for (i = 0; i < (int)(sizeof(zstate) / sizeof(zstate[0])); ++i) {
-		zstate[i].count = 0;
-		zstate[i].ts = mouse_button_state_ts;
+	for (i = 0; i < (int)(sizeof(bt->zstate) / sizeof(bt->zstate[0])); ++i) {
+		bt->zstate[i].count = 0;
+		bt->zstate[i].ts = mouse_button_state_ts;
 	}
 }
 
@@ -1896,6 +1902,7 @@ skipspace(char *s)
 static bool
 r_installmap(char *arg)
 {
+	struct btstate *bt = &rodent.btstate;
 	int pbutton;
 	int lbutton;
 	char *s;
@@ -1923,7 +1930,7 @@ r_installmap(char *arg)
 		if ((pbutton <= 0) || (pbutton > MOUSE_MAXBUTTON))
 			return (false);
 		p2l[pbutton - 1] = 1 << (lbutton - 1);
-		mstate[lbutton - 1] = &bstate[pbutton - 1];
+		bt->mstate[lbutton - 1] = &bt->bstate[pbutton - 1];
 	}
 
 	return (true);
@@ -1932,6 +1939,7 @@ r_installmap(char *arg)
 static void
 r_map(mousestatus_t *act1, mousestatus_t *act2)
 {
+	struct btstate *bt = &rodent.btstate;
 	int pb;
 	int pbuttons;
 	int lbuttons;
@@ -1970,16 +1978,16 @@ r_map(mousestatus_t *act1, mousestatus_t *act2)
 			    | rodent.zmap[2] | rodent.zmap[3]);
 		if ((act1->dz < -1) && rodent.zmap[2]) {
 			pbuttons |= rodent.zmap[2];
-			zstate[2].count = 1;
+			bt->zstate[2].count = 1;
 		} else if (act1->dz < 0) {
 			pbuttons |= rodent.zmap[0];
-			zstate[0].count = 1;
+			bt->zstate[0].count = 1;
 		} else if ((act1->dz > 1) && rodent.zmap[3]) {
 			pbuttons |= rodent.zmap[3];
-			zstate[3].count = 1;
+			bt->zstate[3].count = 1;
 		} else if (act1->dz > 0) {
 			pbuttons |= rodent.zmap[1];
-			zstate[1].count = 1;
+			bt->zstate[1].count = 1;
 		}
 		act2->dz = 0;
 		break;
@@ -1999,6 +2007,7 @@ r_map(mousestatus_t *act1, mousestatus_t *act2)
 static void
 r_timestamp(mousestatus_t *act)
 {
+	struct btstate *bt = &rodent.btstate;
 	struct timespec ts;
 	struct timespec ts1;
 	struct timespec ts2;
@@ -2028,24 +2037,24 @@ r_timestamp(mousestatus_t *act)
 			if (act->button & button) {
 				/* the button is down */
 				debug("  :  %jd %ld",
-				    (intmax_t)bstate[i].ts.tv_sec,
-				    bstate[i].ts.tv_nsec);
-				if (tscmp(&ts, &bstate[i].ts, >)) {
-					bstate[i].count = 1;
+				    (intmax_t)bt->bstate[i].ts.tv_sec,
+				    bt->bstate[i].ts.tv_nsec);
+				if (tscmp(&ts, &bt->bstate[i].ts, >)) {
+					bt->bstate[i].count = 1;
 				} else {
-					++bstate[i].count;
+					++bt->bstate[i].count;
 				}
-				bstate[i].ts = ts1;
+				bt->bstate[i].ts = ts1;
 			} else {
 				/* the button is up */
-				bstate[i].ts = ts1;
+				bt->bstate[i].ts = ts1;
 			}
 		} else {
 			if (act->button & button) {
 				/* the button has been down */
-				if (tscmp(&ts2, &bstate[i].ts, >)) {
-					bstate[i].count = 1;
-					bstate[i].ts = ts1;
+				if (tscmp(&ts2, &bt->bstate[i].ts, >)) {
+					bt->bstate[i].count = 1;
+					bt->bstate[i].ts = ts1;
 					act->flags |= button;
 					debug("button %d timeout", i + 1);
 				}
@@ -2093,6 +2102,7 @@ r_move(mousestatus_t *act, struct accel *acc)
 static void
 r_click(mousestatus_t *act)
 {
+	struct btstate *bt = &rodent.btstate;
 	struct mouse_info mouse;
 	int button;
 	int mask;
@@ -2105,10 +2115,10 @@ r_click(mousestatus_t *act)
 	button = MOUSE_BUTTON1DOWN;
 	for (i = 0; (i < MOUSE_MAXBUTTON) && (mask != 0); ++i) {
 		if (mask & 1) {
-			debug("mstate[%d]->count:%d", i, mstate[i]->count);
+			debug("mstate[%d]->count:%d", i, bt->mstate[i]->count);
 			if (act->button & button) {
 				/* the button is down */
-				mouse.u.event.value = mstate[i]->count;
+				mouse.u.event.value = bt->mstate[i]->count;
 			} else {
 				/* the button is up */
 				mouse.u.event.value = 0;
