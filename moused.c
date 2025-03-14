@@ -88,8 +88,6 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 #define MOUSE_XAXIS	(-1)
 #define MOUSE_YAXIS	(-2)
 
-#define	ChordMiddle	0x0001
-
 #define	MAX_FINGERS	10
 
 #define ID_NONE		0
@@ -397,7 +395,6 @@ struct accel {
 };
 
 static struct rodentparam {
-	int flags;
 	struct device dev;	/* Device */
 	struct quirks *quirks;	/* Configuration file and quirks */
 	int zmap[4];		/* MOUSE_{X|Y}AXIS or a button number */
@@ -415,7 +412,6 @@ static struct rodentparam {
 	struct tpstate gest;	/* touchpad gesture state */
 	struct evstate ev;	/* event device state */
 } rodent = {
-	.flags = 0,
 	.dev.path = NULL,
 	.dev.type = DEVICE_TYPE_UNKNOWN,
 	.quirks = NULL,
@@ -495,7 +491,7 @@ main(int argc, char *argv[])
 	for (i = 0; i < MOUSE_MAXBUTTON; ++i)
 		rodent.btstate.mstate[i] = &rodent.btstate.bstate[i];
 
-	while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:cdfghi:m:p:q:w:z:"))
+	while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:dfghi:m:p:q:w:z:"))
 	    != -1) {
 		switch(c) {
 
@@ -534,10 +530,6 @@ main(int argc, char *argv[])
 			}
 			if (i == 1)
 				opt_expoffset = 1.0;
-			break;
-
-		case 'c':
-			rodent.flags |= ChordMiddle;
 			break;
 
 		case 'd':
@@ -1017,7 +1009,7 @@ static void
 usage(void)
 {
 	fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n",
-	    "usage: moused [-cdfg] [-I file]",
+	    "usage: moused [-dfg] [-I file]",
 	    "              [-VH [-U threshold]] [-a X[,Y]] [-C threshold] [-m N=M] [-w N]",
 	    "              [-z N] [-3 [-E timeout]]",
 	    "              [-T distance[,time[,after]]] -p <port> [-q config] [-Q quirks]",
