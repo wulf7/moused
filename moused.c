@@ -88,6 +88,7 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 #define MOUSE_XAXIS	(-1)
 #define MOUSE_YAXIS	(-2)
 
+#define	ZMAP_MAXBUTTON	4	/* Number of zmap items */
 #define	MAX_FINGERS	10
 
 #define ID_NONE		0
@@ -288,11 +289,11 @@ struct button_state {
 };
 
 struct btstate {
-	long 			clickthreshold;	/* double click speed in msec */
+	long 	clickthreshold;	/* double click speed in msec */
 	struct button_state	bstate[MOUSE_MAXBUTTON]; /* button state */
 	struct button_state	*mstate[MOUSE_MAXBUTTON];/* mapped button st.*/
-	int			zmap[4];/* MOUSE_{X|Y}AXIS or a button number */
-	struct button_state	zstate[4];		 /* Z/W axis state */
+	int	zmap[ZMAP_MAXBUTTON];/* MOUSE_{X|Y}AXIS or a button number */
+	struct button_state	zstate[ZMAP_MAXBUTTON];	 /* Z/W axis state */
 };
 
 /* state machine for 3 button emulation */
@@ -603,7 +604,7 @@ main(int argc, char *argv[])
 			rodent.btstate.zmap[0] = i;
 			rodent.btstate.zmap[1] = i + 1;
 			debug("optind: %d, optarg: '%s'", optind, optarg);
-			for (j = 1; j < 4; ++j) {
+			for (j = 1; j < ZMAP_MAXBUTTON; ++j) {
 				if ((optind >= argc) || !isdigit(*argv[optind]))
 					break;
 				i = atoi(argv[optind]);
@@ -1161,7 +1162,7 @@ r_init_buttons(void)
 	int i, j;
 
 	/* fix Z axis mapping */
-	for (i = 0; i < 4; ++i) {
+	for (i = 0; i < ZMAP_MAXBUTTON; ++i) {
 		if (bt->zmap[i] > 0) {
 			for (j = 0; j < MOUSE_MAXBUTTON; ++j) {
 				if (bt->mstate[j] == &bt->bstate[bt->zmap[i] - 1])
@@ -1181,7 +1182,7 @@ r_init_buttons(void)
 		bt->bstate[i].count = 0;
 		bt->bstate[i].ts = ts;
 	}
-	for (i = 0; i < (int)(sizeof(bt->zstate) / sizeof(bt->zstate[0])); ++i) {
+	for (i = 0; i < ZMAP_MAXBUTTON; ++i) {
 		bt->zstate[i].count = 0;
 		bt->zstate[i].ts = ts;
 	}
