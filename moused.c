@@ -1849,46 +1849,48 @@ r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
 	a2->flags = a1->flags;
 	changed = false;
 
-	if (e3b->enabled) {
-		if (debug > 2)
-			debug("state:%d, trans:%d -> state:%d",
-			    e3b->mouse_button_state, trans,
-			    states[e3b->mouse_button_state].s[trans]);
-		/*
-		 * Avoid re-ordering button and movement events. While a button
-		 * event is deferred, throw away up to BUTTON2_MAXMOVE movement
-		 * events to allow for mouse jitter. If more movement events
-		 * occur, then complete the deferred button events immediately.
-		 */
-		if ((a2->dx != 0 || a2->dy != 0) &&
-		    S_DELAYED(states[e3b->mouse_button_state].s[trans])) {
-			if (++e3b->mouse_move_delayed > BUTTON2_MAXMOVE) {
-				e3b->mouse_move_delayed = 0;
-				e3b->mouse_button_state =
-				    states[e3b->mouse_button_state].s[A_TIMEOUT];
-				changed = true;
-			} else
-				a2->dx = a2->dy = 0;
-		} else
+	if (!e3b->enabled)
+		return (false);
+
+	if (debug > 2)
+		debug("state:%d, trans:%d -> state:%d",
+		    e3b->mouse_button_state, trans,
+		    states[e3b->mouse_button_state].s[trans]);
+	/*
+	 * Avoid re-ordering button and movement events. While a button
+	 * event is deferred, throw away up to BUTTON2_MAXMOVE movement
+	 * events to allow for mouse jitter. If more movement events
+	 * occur, then complete the deferred button events immediately.
+	 */
+	if ((a2->dx != 0 || a2->dy != 0) &&
+	    S_DELAYED(states[e3b->mouse_button_state].s[trans])) {
+		if (++e3b->mouse_move_delayed > BUTTON2_MAXMOVE) {
 			e3b->mouse_move_delayed = 0;
-		if (e3b->mouse_button_state != states[e3b->mouse_button_state].s[trans])
+			e3b->mouse_button_state =
+			    states[e3b->mouse_button_state].s[A_TIMEOUT];
 			changed = true;
-		if (changed)
-			clock_gettime(CLOCK_MONOTONIC_FAST,
-			   &e3b->mouse_button_state_ts);
-		e3b->mouse_button_state = states[e3b->mouse_button_state].s[trans];
-		a2->button &= ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN |
-		    MOUSE_BUTTON3DOWN);
-		a2->button &= states[e3b->mouse_button_state].mask;
-		a2->button |= states[e3b->mouse_button_state].buttons;
-		flags = a2->flags & MOUSE_POSCHANGED;
-		flags |= a2->obutton ^ a2->button;
-		if (flags & MOUSE_BUTTON2DOWN) {
-			a2->flags = flags & MOUSE_BUTTON2DOWN;
-			r_timestamp(a2);
-		}
-		a2->flags = flags;
+		} else
+			a2->dx = a2->dy = 0;
+	} else
+		e3b->mouse_move_delayed = 0;
+	if (e3b->mouse_button_state != states[e3b->mouse_button_state].s[trans])
+		changed = true;
+	if (changed)
+		clock_gettime(CLOCK_MONOTONIC_FAST,
+		   &e3b->mouse_button_state_ts);
+	e3b->mouse_button_state = states[e3b->mouse_button_state].s[trans];
+	a2->button &= ~(MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN |
+	    MOUSE_BUTTON3DOWN);
+	a2->button &= states[e3b->mouse_button_state].mask;
+	a2->button |= states[e3b->mouse_button_state].buttons;
+	flags = a2->flags & MOUSE_POSCHANGED;
+	flags |= a2->obutton ^ a2->button;
+	if (flags & MOUSE_BUTTON2DOWN) {
+		a2->flags = flags & MOUSE_BUTTON2DOWN;
+		r_timestamp(a2);
 	}
+	a2->flags = flags;
+
 	return (changed);
 }
 
