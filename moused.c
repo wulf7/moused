@@ -463,7 +463,7 @@ static char *	r_installzmap(char *arg, char **argv, int argc, int* idx, struct b
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2,
 		    struct btstate *bt);
 static void	r_timestamp(mousestatus_t *act);
-static bool	r_timeout(void);
+static bool	r_timeout(struct e3bstate *e3b);
 static void	r_move(mousestatus_t *act, struct accel *acc);
 static void	r_click(mousestatus_t *act);
 static bool	r_drift(struct drift *, mousestatus_t *);
@@ -847,7 +847,8 @@ moused(void)
 			action0.button = action0.obutton;
 			action0.dx = action0.dy = action0.dz = 0;
 			action0.flags = flags = 0;
-			if (r_timeout() && r_statetrans(&action0, &action, A_TIMEOUT)) {
+			if (r_timeout(&r->e3b) &&
+			    r_statetrans(&action0, &action, A_TIMEOUT)) {
 				if (debug > 2)
 					debug("flags:%08x buttons:%08x obuttons:%08x",
 					    action.flags, action.button, action.obutton);
@@ -2146,9 +2147,8 @@ r_timestamp(mousestatus_t *act)
 }
 
 static bool
-r_timeout(void)
+r_timeout(struct e3bstate *e3b)
 {
-	struct e3bstate *e3b = &rodent.e3b;
 	struct timespec ts;
 	struct timespec ts1;
 
