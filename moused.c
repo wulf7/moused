@@ -149,6 +149,8 @@ tssubms(struct timespec* tsp, u_int ms)
 #define logwarnx(...)						\
 	log_or_warn(LOG_DAEMON | LOG_WARNING, 0, __VA_ARGS__)
 
+/* structures */
+
 enum gesture {
 	GEST_IGNORE,
 	GEST_ACCUMULATE,
@@ -156,45 +158,6 @@ enum gesture {
 	GEST_VSCROLL,
 	GEST_HSCROLL,
 };
-
-/* structures */
-
-/* global variables */
-
-static int	debug = 0;
-static bool	nodaemon = false;
-static bool	background = false;
-static bool	paused = false;
-static bool	grab = false;
-static int	identify = ID_NONE;
-static const char *devpath = NULL;
-static const char *pidfile = "/var/run/moused.pid";
-static struct pidfh *pfh;
-static const char *config_file = CONFDIR "/moused.conf";
-static const char *quirks_path = QUIRKSDIR;
-static struct quirks_context *quirks;
-
-static u_int	opt_wmode;
-static bool	opt_e3b_enabled = false;
-static int	opt_e3b_button2timeout = -1;
-
-static bool	opt_drift_terminate = false;
-static u_int	opt_drift_distance = 4;		/* max steps X+Y */
-static u_int	opt_drift_time = 500;		/* ms */
-static u_int	opt_drift_after = 4000;		/* ms */
-
-static double	opt_accelx = 1.0;
-static double	opt_accely = 1.0;
-static bool	opt_exp_accel = false;
-static double	opt_expoaccel = 1.0;
-static double	opt_expoffset = 1.0;
-
-static bool	opt_virtual_scroll = false;
-static bool	opt_hvirtual_scroll = false;
-static int	opt_scroll_speed = -1;
-static int	opt_scroll_threshold = -1;
-
-/* local variables */
 
 /* types (the table must be ordered by DEVICE_TYPE_XXX in util.h) */
 static const char *rnames[] = {
@@ -437,6 +400,41 @@ static struct rodent {
 		.idletimeout = -1,
 	},
 };
+
+/* global variables */
+
+static int	debug = 0;
+static bool	nodaemon = false;
+static bool	background = false;
+static bool	paused = false;
+static bool	grab = false;
+static int	identify = ID_NONE;
+static const char *devpath = NULL;
+static const char *pidfile = "/var/run/moused.pid";
+static struct pidfh *pfh;
+static const char *config_file = CONFDIR "/moused.conf";
+static const char *quirks_path = QUIRKSDIR;
+static struct quirks_context *quirks;
+
+static u_int	opt_wmode;
+static bool	opt_e3b_enabled = false;
+static int	opt_e3b_button2timeout = -1;
+
+static bool	opt_drift_terminate = false;
+static u_int	opt_drift_distance = 4;		/* max steps X+Y */
+static u_int	opt_drift_time = 500;		/* ms */
+static u_int	opt_drift_after = 4000;		/* ms */
+
+static double	opt_accelx = 1.0;
+static double	opt_accely = 1.0;
+static bool	opt_exp_accel = false;
+static double	opt_expoaccel = 1.0;
+static double	opt_expoffset = 1.0;
+
+static bool	opt_virtual_scroll = false;
+static bool	opt_hvirtual_scroll = false;
+static int	opt_scroll_speed = -1;
+static int	opt_scroll_threshold = -1;
 
 static jmp_buf env;
 
