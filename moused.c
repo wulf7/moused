@@ -461,8 +461,8 @@ static int	r_protocol(struct input_event *b, mousestatus_t *act);
 static void	r_vscroll_detect(mousestatus_t *act);
 static void	r_vscroll(mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
-static bool	r_installmap(char *arg);
-static char *	r_installzmap(char *arg, char **argv, int argc, int* idx);
+static bool	r_installmap(char *arg, struct btstate *bt);
+static char *	r_installzmap(char *arg, char **argv, int argc, int* idx, struct btstate *bt);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2,
 		    struct btstate *bt);
 static void	r_timestamp(mousestatus_t *act);
@@ -555,7 +555,7 @@ main(int argc, char *argv[])
 			break;
 
 		case 'm':
-			if (!r_installmap(optarg)) {
+			if (!r_installmap(optarg, &rodent.btstate)) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
@@ -575,7 +575,8 @@ main(int argc, char *argv[])
 			break;
 
 		case 'z':
-			errstr = r_installzmap(optarg, argv, argc, &optind);
+			errstr = r_installzmap(optarg, argv, argc, &optind,
+			    &rodent.btstate);
 			if (errstr != NULL) {
 				warnx("%s", errstr);
 				free(errstr);
@@ -1932,9 +1933,8 @@ skipspace(char *s)
 }
 
 static bool
-r_installmap(char *arg)
+r_installmap(char *arg, struct btstate *bt)
 {
-	struct btstate *bt = &rodent.btstate;
 	int pbutton;
 	int lbutton;
 	char *s;
@@ -1969,9 +1969,8 @@ r_installmap(char *arg)
 }
 
 static char *
-r_installzmap(char *arg, char **argv, int argc, int* idx)
+r_installzmap(char *arg, char **argv, int argc, int* idx, struct btstate *bt)
 {
-	struct btstate *bt = &rodent.btstate;
 	char *errstr;
 	int i, j;
 
