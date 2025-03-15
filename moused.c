@@ -1334,10 +1334,8 @@ r_init_drift(void)
 }
 
 static void
-r_init_accel(void)
+r_init_accel(struct quirks *q, struct accel *acc)
 {
-	struct quirks *q = rodent.quirks;
-	struct accel *acc = &rodent.accel;
 	bool r1, r2;
 
 	acc->accelx = opt_accelx;
@@ -1439,16 +1437,15 @@ r_init(struct rodent *r, const char *path)
 
 	r_init_buttons();
 	r_init_scroll(&r->scroll);
+	r_init_accel(r->quirks, &r->accel);
 	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
-		r_init_accel();
 		r_init_touchpad_hw(fd, r->quirks, &r->tphw);
 		r_init_touchpad_info(r->quirks, &r->tphw, &r->tpinfo);
 		r_init_touchpad_accel(&r->tphw, &r->accel);
 		break;
 
 	case DEVICE_TYPE_MOUSE:
-		r_init_accel();
 		r_init_drift();
 		break;
 
