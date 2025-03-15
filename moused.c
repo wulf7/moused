@@ -204,6 +204,7 @@ static const char *rnames[] = {
 
 struct tpcaps {
 	bool	is_clickpad;
+	bool	is_topbuttonpad;
 	bool	is_mt;
 	bool	cap_touch;
 	bool	cap_pressure;
@@ -431,22 +432,6 @@ static struct rodentparam {
 	.scroll = {
 		.threshold = DFLT_SCROLLTHRESHOLD,
 		.speed = DFLT_SCROLLSPEED,
-	},
-	.tpinfo = {
-		.two_finger_scroll = true,
-		.natural_scroll = false,
-		.three_finger_drag = false,
-		.min_pressure_hi = 1,
-		.min_pressure_lo = 1,
-		.max_pressure = 130,
-		.max_width = 16,
-		.tap_timeout = 180,		/* ms */
-		.tap_threshold = 0,
-		.tap_max_delta = 1.3,		/* mm */
-		.taphold_timeout = 300,		/* ms */
-		.vscroll_min_delta = 1.25,	/* mm */
-		.vscroll_hor_area = 0.0,	/* mm */
-		.vscroll_ver_area = -15.0,	/* mm */
 	},
 	.gest = {
 		.idletimeout = -1,
@@ -1163,29 +1148,17 @@ r_init_buttons(void)
 }
 
 static void
-r_init_touchpad(int fd, struct quirks *q, struct tpcaps *tphw,
-    struct tpinfo *tpinfo)
+r_init_touchpad_hw(int fd, struct quirks *q, struct tpcaps *tphw)
 {
 	struct input_absinfo ai;
 	bitstr_t bit_decl(key_bits, KEY_CNT);
 	bitstr_t bit_decl(abs_bits, ABS_CNT);
 	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
-	struct accel *accel = &rodent.accel;
 	struct quirk_range r;
 	struct quirk_dimensions dim;
 	int i;
 	u_int u;
 	int sz_x, sz_y;
-
-	quirks_get_bool(q, MOUSED_TWO_FINGER_SCROLL, &tpinfo->two_finger_scroll);
-	quirks_get_bool(q, MOUSED_NATURAL_SCROLL, &tpinfo->natural_scroll);
-	quirks_get_bool(q, MOUSED_THREE_FINGER_DRAG, &tpinfo->three_finger_drag);
-	quirks_get_uint32(q, MOUSED_TAP_TIMEOUT, &tpinfo->tap_timeout);
-	quirks_get_double(q, MOUSED_TAP_MAX_DELTA, &tpinfo->tap_max_delta);
-	quirks_get_uint32(q, MOUSED_TAPHOLD_TIMEOUT, &tpinfo->taphold_timeout);
-	quirks_get_double(q, MOUSED_VSCROLL_MIN_DELTA, &tpinfo->vscroll_min_delta);
-	quirks_get_double(q, MOUSED_VSCROLL_HOR_AREA, &tpinfo->vscroll_hor_area);
-	quirks_get_double(q, MOUSED_VSCROLL_VER_AREA, &tpinfo->vscroll_ver_area);
 
 	ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits);
 	ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits);
@@ -1193,14 +1166,12 @@ r_init_touchpad(int fd, struct quirks *q, struct tpcaps *tphw,
 	if (ioctl(fd, EVIOCGABS(ABS_X), &ai) >= 0) {
 		tphw->min_x = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
 		tphw->max_x = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
-		sz_x = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
 		tphw->res_x = ai.resolution == 0 ?
 		    DFLT_TPAD_RESOLUTION : ai.resolution;
 	}
 	if (ioctl(fd, EVIOCGABS(ABS_Y), &ai) >= 0) {
 		tphw->min_y = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
 		tphw->max_y = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
-		sz_y = (ai.maximum > ai.minimum) ? ai.maximum - ai.minimum : 0;
 		tphw->res_y = ai.resolution == 0 ?
 		    DFLT_TPAD_RESOLUTION : ai.resolution;
 	}
@@ -1233,6 +1204,61 @@ r_init_touchpad(int fd, struct quirks *q, struct tpcaps *tphw,
 			tphw->cap_pressure = false;
 		}
 	}
+	/* XXX: libinput uses ABS_MT_TOUCH_MAJOR where available */
+	if (bit_test(abs_bits, ABS_TOOL_WIDTH) &&
+	    quirks_get_uint32(q, QUIRK_ATTR_PALM_SIZE_THRESHOLD, &u) &&
+	    u != 0)
+		tphw->cap_width = true;
+	if (bit_test(abs_bits, ABS_MT_SLOT) &&
+	    bit_test(abs_bits, ABS_MT_TRACKING_ID) &&
+	    bit_test(abs_bits, ABS_MT_POSITION_X) &&
+	    bit_test(abs_bits, ABS_MT_POSITION_Y))
+		tphw->is_mt = true;
+	if (ioctl(fd, EVIOCGPROP(sizeof(prop_bits)), prop_bits) >= 0 &&
+	    bit_test(prop_bits, INPUT_PROP_BUTTONPAD))
+		tphw->is_clickpad = true;
+	if (tphw->is_clickpad &&
+	    bit_test(prop_bits, INPUT_PROP_TOPBUTTONPAD))
+		tphw->is_topbuttonpad = true;
+}
+
+static void
+r_init_touchpad_info(struct quirks *q, struct tpcaps *tphw,
+    struct tpinfo *tpinfo)
+{
+	struct accel *accel = &rodent.accel;
+	struct quirk_range r;
+	int i;
+	u_int u;
+	int sz_x, sz_y;
+
+	*tpinfo = (struct tpinfo) {
+		.two_finger_scroll = true,
+		.natural_scroll = false,
+		.three_finger_drag = false,
+		.min_pressure_hi = 1,
+		.min_pressure_lo = 1,
+		.max_pressure = 130,
+		.max_width = 16,
+		.tap_timeout = 180,		/* ms */
+		.tap_threshold = 0,
+		.tap_max_delta = 1.3,		/* mm */
+		.taphold_timeout = 300,		/* ms */
+		.vscroll_min_delta = 1.25,	/* mm */
+		.vscroll_hor_area = 0.0,	/* mm */
+		.vscroll_ver_area = -15.0,	/* mm */
+	};
+
+	quirks_get_bool(q, MOUSED_TWO_FINGER_SCROLL, &tpinfo->two_finger_scroll);
+	quirks_get_bool(q, MOUSED_NATURAL_SCROLL, &tpinfo->natural_scroll);
+	quirks_get_bool(q, MOUSED_THREE_FINGER_DRAG, &tpinfo->three_finger_drag);
+	quirks_get_uint32(q, MOUSED_TAP_TIMEOUT, &tpinfo->tap_timeout);
+	quirks_get_double(q, MOUSED_TAP_MAX_DELTA, &tpinfo->tap_max_delta);
+	quirks_get_uint32(q, MOUSED_TAPHOLD_TIMEOUT, &tpinfo->taphold_timeout);
+	quirks_get_double(q, MOUSED_VSCROLL_MIN_DELTA, &tpinfo->vscroll_min_delta);
+	quirks_get_double(q, MOUSED_VSCROLL_HOR_AREA, &tpinfo->vscroll_hor_area);
+	quirks_get_double(q, MOUSED_VSCROLL_VER_AREA, &tpinfo->vscroll_ver_area);
+
 	if (tphw->cap_pressure &&
 	    quirks_get_range(q, QUIRK_ATTR_PRESSURE_RANGE, &r)) {
 		tpinfo->min_pressure_lo = r.lower;
@@ -1242,27 +1268,18 @@ r_init_touchpad(int fd, struct quirks *q, struct tpcaps *tphw,
 		quirks_get_uint32(q, MOUSED_TAP_PRESSURE_THRESHOLD,
 		    &tpinfo->tap_threshold);
 	}
-	/* XXX: libinput uses ABS_MT_TOUCH_MAJOR where available */
-	if (bit_test(abs_bits, ABS_TOOL_WIDTH) &&
-	    quirks_get_uint32(q, QUIRK_ATTR_PALM_SIZE_THRESHOLD,
-	     &tpinfo->max_width) && tpinfo->max_width != 0)
-		tphw->cap_width = true;
-	if (bit_test(abs_bits, ABS_MT_SLOT) &&
-	    bit_test(abs_bits, ABS_MT_TRACKING_ID) &&
-	    bit_test(abs_bits, ABS_MT_POSITION_X) &&
-	    bit_test(abs_bits, ABS_MT_POSITION_Y))
-		tphw->is_mt = true;
-	if (ioctl(fd, EVIOCGPROP(sizeof(prop_bits)), prop_bits) >= 0) {
-		if (bit_test(prop_bits, INPUT_PROP_BUTTONPAD))
-			tphw->is_clickpad = true;
-	}
+	if (tphw->cap_width)
+		quirks_get_uint32(q, QUIRK_ATTR_PALM_SIZE_THRESHOLD,
+		     &tpinfo->max_width);
 	/* Set bottom quarter as 42% - 16% - 42% sized softbuttons */
 	if (tphw->is_clickpad) {
+		sz_x = tphw->max_x - tphw->min_x;
+		sz_y = tphw->max_y - tphw->min_y;
 		i = 25;
+		if (tphw->is_topbuttonpad)
+			i = -i;
 		quirks_get_int32(q, MOUSED_SOFTBUTTONS_Y, &i);
 		tpinfo->softbuttons_y = sz_y * i / 100;
-		if (bit_test(prop_bits, INPUT_PROP_TOPBUTTONPAD))
-			tpinfo->softbuttons_y = -tpinfo->softbuttons_y;
 		u = 42;
 		quirks_get_uint32(q, MOUSED_SOFTBUTTON2_X, &u);
 		tpinfo->softbutton2_x = sz_x * u / 100;
@@ -1270,6 +1287,11 @@ r_init_touchpad(int fd, struct quirks *q, struct tpcaps *tphw,
 		quirks_get_uint32(q, MOUSED_SOFTBUTTON3_X, &u);
 		tpinfo->softbutton3_x = sz_x * u / 100;
 	}
+}
+
+static void
+r_init_touchpad_accel(struct tpcaps *tphw, struct accel *accel)
+{
 	/* Normalize pointer movement to match 200dpi mouse */
 	accel->accelx *= DFLT_MOUSE_RESOLUTION;
 	accel->accelx /= tphw->res_x;
@@ -1399,7 +1421,9 @@ r_init(const char *path)
 	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
 		r_init_accel();
-		r_init_touchpad(fd, rodent.quirks, &rodent.tphw, &rodent.tpinfo);
+		r_init_touchpad_hw(fd, rodent.quirks, &rodent.tphw);
+		r_init_touchpad_info(rodent.quirks, &rodent.tphw, &rodent.tpinfo);
+		r_init_touchpad_accel(&rodent.tphw, &rodent.accel);
 		break;
 
 	case DEVICE_TYPE_MOUSE:
