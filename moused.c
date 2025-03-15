@@ -262,7 +262,7 @@ struct button_state {
 
 struct btstate {
 	u_int	wmode;		/* wheel mode button number */
-	long 	clickthreshold;	/* double click speed in msec */
+	int 	clickthreshold;	/* double click speed in msec */
 	struct button_state	bstate[MOUSE_MAXBUTTON]; /* button state */
 	struct button_state	*mstate[MOUSE_MAXBUTTON];/* mapped button st.*/
 	int	zmap[ZMAP_MAXBUTTON];/* MOUSE_{X|Y}AXIS or a button number */
@@ -392,10 +392,6 @@ static struct rodent {
 	.quirks = NULL,
 	.mfd = -1,
 	.cfd = -1,
-	.btstate = {
-		.clickthreshold = DFLT_CLICKTHRESHOLD,
-		.zmap = { 0, 0, 0, 0 },
-	},
 	.gest = {
 		.idletimeout = -1,
 	},
@@ -417,6 +413,7 @@ static const char *quirks_path = QUIRKSDIR;
 static struct quirks_context *quirks;
 
 static u_int	opt_wmode;
+static int	opt_clickthreshold = -1;
 static bool	opt_e3b_enabled = false;
 static int	opt_e3b_button2timeout = -1;
 
@@ -583,9 +580,9 @@ main(int argc, char *argv[])
 			break;
 
 		case 'C':
-			rodent.btstate.clickthreshold = atoi(optarg);
-			if ((rodent.btstate.clickthreshold < 0) ||
-			    (rodent.btstate.clickthreshold > MAX_CLICKTHRESHOLD)) {
+			opt_clickthreshold = atoi(optarg);
+			if ((opt_clickthreshold < 0) ||
+			    (opt_clickthreshold > MAX_CLICKTHRESHOLD)) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
@@ -1120,6 +1117,13 @@ r_init_buttons(struct btstate *bt, struct e3bstate *e3b)
 	struct timespec ts;
 	int i, j;
 
+	*bt = (struct btstate) {
+		.clickthreshold = DFLT_CLICKTHRESHOLD,
+//		.zmap = { 0, 0, 0, 0 },
+	};
+
+	if (opt_clickthreshold >= 0)
+		bt->clickthreshold = opt_clickthreshold;
 	if (opt_wmode != 0)
 		bt->wmode = opt_wmode;
 
