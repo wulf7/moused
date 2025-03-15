@@ -404,7 +404,7 @@ struct accel {
 	double lastlength[3];
 };
 
-static struct rodentparam {
+static struct rodent {
 	struct device dev;	/* Device */
 	struct quirks *quirks;	/* Configuration file and quirks */
 	int wmode;		/* wheel mode button number */
@@ -802,6 +802,7 @@ expoacc(struct accel *acc, int dx, int dy, int dz,
 static void
 moused(void)
 {
+	struct rodent *r = &rodent;
 	mousestatus_t action0;		/* original mouse action */
 	mousestatus_t action;		/* interim buffer */
 	mousestatus_t action2;		/* mapped action */
@@ -820,21 +821,21 @@ moused(void)
 	/* process mouse data */
 	for (;;) {
 
-		fds.fd = rodent.mfd;
+		fds.fd = r->mfd;
 		fds.events = POLLIN;
 		fds.revents = 0;
 		timeout = -1;
-		if (rodent.e3b.enabled &&
-		    S_DELAYED(rodent.e3b.mouse_button_state)) {
+		if (r->e3b.enabled &&
+		    S_DELAYED(r->e3b.mouse_button_state)) {
 			timeout = 20;
 			timeout_em3b = true;
 		}
-		if (rodent.gest.idletimeout != -1) {
-			if (timeout == -1 || rodent.gest.idletimeout < timeout) {
-				timeout = rodent.gest.idletimeout;
+		if (r->gest.idletimeout != -1) {
+			if (timeout == -1 || r->gest.idletimeout < timeout) {
+				timeout = r->gest.idletimeout;
 				timeout_em3b = false;
 			} else
-				rodent.gest.idletimeout -= timeout;
+				r->gest.idletimeout -= timeout;
 		}
 
 		c = poll(&fds, 1, timeout);
@@ -859,7 +860,7 @@ moused(void)
 			if (c > 0) {
 				if ((fds.revents & POLLIN) == 0)
 					return;
-				if (read(rodent.mfd, &b, sizeof(b)) == -1) {
+				if (read(r->mfd, &b, sizeof(b)) == -1) {
 					if (errno == EWOULDBLOCK)
 						continue;
 					else
@@ -872,12 +873,12 @@ moused(void)
 				b.code = SYN_REPORT;
 				b.value = 1;
 			}
-			rodent.gest.idletimeout = -1;
+			r->gest.idletimeout = -1;
 			flags = r_protocol(&b, &action0);
 			if (flags == 0)
 				continue;
 
-			if (rodent.scroll.enable_vert || rodent.scroll.enable_hor) {
+			if (r->scroll.enable_vert || r->scroll.enable_hor) {
 				if (action0.button == MOUSE_BUTTON2DOWN) {
 					debug("[BUTTON2] flags:%08x buttons:%08x obuttons:%08x",
 					    action.flags, action.button, action.obutton);
@@ -908,7 +909,7 @@ moused(void)
 		debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
 		    action2.button, action2.dx, action2.dy, action2.dz);
 
-		if (rodent.scroll.enable_vert || rodent.scroll.enable_hor) {
+		if (r->scroll.enable_vert || r->scroll.enable_hor) {
 			/*
 			 * If *only* the middle button is pressed AND we are moving
 			 * the stick/trackpoint/nipple, scroll!
@@ -916,30 +917,29 @@ moused(void)
 			r_vscroll(&action2);
 		}
 
-		if (rodent.drift.terminate) {
+		if (r->drift.terminate) {
 			if ((flags & MOUSE_POSCHANGED) == 0 ||
 			    action.dz || action2.dz)
-				rodent.drift.last_activity =
-				    rodent.drift.current_ts;
+				r->drift.last_activity = r->drift.current_ts;
 			else {
-				if (r_drift (&rodent.drift, &action2))
+				if (r_drift (&r->drift, &action2))
 					continue;
 			}
 		}
 
 		/* Defer clicks until we aren't VirtualScroll'ing. */
-		if (rodent.scroll.state == SCROLL_NOTSCROLLING)
+		if (r->scroll.state == SCROLL_NOTSCROLLING)
 			r_click(&action2);
 
 		if (action2.flags & MOUSE_POSCHANGED)
-			r_move(&action2, &rodent.accel);
+			r_move(&action2, &r->accel);
 
 		/*
 		 * If the Z axis movement is mapped to an imaginary physical
 		 * button, we need to cook up a corresponding button `up' event
 		 * after sending a button `down' event.
 		 */
-		if ((rodent.btstate.zmap[0] > 0) && (action.dz != 0)) {
+		if ((r->btstate.zmap[0] > 0) && (action.dz != 0)) {
 			action.obutton = action.button;
 			action.dx = action.dy = action.dz = 0;
 			r_map(&action, &action2);
