@@ -462,7 +462,8 @@ static bool	r_installmap(char *arg, struct btstate *bt);
 static char *	r_installzmap(char *arg, char **argv, int argc, int* idx, struct btstate *bt);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2,
 		    struct btstate *bt);
-static void	r_timestamp(mousestatus_t *act);
+static void	r_timestamp(mousestatus_t *act, struct btstate *bt,
+		    struct e3bstate *e3b, struct drift *drift);
 static bool	r_timeout(struct e3bstate *e3b);
 static void	r_move(mousestatus_t *act, struct accel *acc);
 static void	r_click(mousestatus_t *act);
@@ -890,7 +891,7 @@ moused(void)
 				r_vscroll_detect(&action0);
 			}
 
-			r_timestamp(&action0);
+			r_timestamp(&action0, &r->btstate, &r->e3b, &r->drift);
 			r_statetrans(&action0, &action,
 			    A(action0.button & MOUSE_BUTTON1DOWN,
 			      action0.button & MOUSE_BUTTON3DOWN));
@@ -1731,7 +1732,7 @@ r_vscroll_detect(mousestatus_t *act)
 		newaction = *act;
 
 		/* We were preparing to scroll, but we never moved... */
-		r_timestamp(act);
+		r_timestamp(act, &rodent.btstate, &rodent.e3b, &rodent.drift);
 		r_statetrans(act, &newaction,
 			     A(newaction.button & MOUSE_BUTTON1DOWN,
 			       act->button & MOUSE_BUTTON3DOWN));
@@ -1741,7 +1742,8 @@ r_vscroll_detect(mousestatus_t *act)
 		r_click(&newaction);
 
 		/* Send middle up */
-		r_timestamp(&newaction);
+		r_timestamp(&newaction, &rodent.btstate, &rodent.e3b,
+		    &rodent.drift);
 		newaction.obutton = newaction.button;
 		newaction.button = act->button;
 		r_click(&newaction);
@@ -1909,7 +1911,7 @@ r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
 	flags |= a2->obutton ^ a2->button;
 	if (flags & MOUSE_BUTTON2DOWN) {
 		a2->flags = flags & MOUSE_BUTTON2DOWN;
-		r_timestamp(a2);
+		r_timestamp(a2, &rodent.btstate, e3b, &rodent.drift);
 	}
 	a2->flags = flags;
 
@@ -2083,10 +2085,9 @@ r_map(mousestatus_t *act1, mousestatus_t *act2, struct btstate *bt)
 }
 
 static void
-r_timestamp(mousestatus_t *act)
+r_timestamp(mousestatus_t *act, struct btstate *bt, struct e3bstate *e3b,
+    struct drift *drift)
 {
-	struct btstate *bt = &rodent.btstate;
-	struct e3bstate *e3b = &rodent.e3b;
 	struct timespec ts;
 	struct timespec ts1;
 	struct timespec ts2;
@@ -2101,7 +2102,7 @@ r_timestamp(mousestatus_t *act)
 #endif
 
 	clock_gettime(CLOCK_MONOTONIC_FAST, &ts1);
-	rodent.drift.current_ts = ts1;
+	drift->current_ts = ts1;
 
 	/* double click threshold */
 	ts = tssubms(&ts1, bt->clickthreshold);
