@@ -455,7 +455,7 @@ static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 
 static enum device_type	r_identify(int fd);
 static const char *r_name(int type);
-static int	r_init(const char *path);
+static int	r_init(struct rodent *r, const char *path);
 static int	r_protocol(struct input_event *b, mousestatus_t *act);
 static void	r_vscroll_detect(mousestatus_t *act);
 static void	r_vscroll(mousestatus_t *act);
@@ -681,7 +681,7 @@ main(int argc, char *argv[])
 	if (quirks == NULL)
 		logwarnx("cannot open configuration file %s", config_file);
 
-	if ((rodent.mfd = r_init(devpath)) < 0)
+	if ((rodent.mfd = r_init(&rodent, devpath)) < 0)
 		logerrx(1, "Can not initialize device");
 
 	/* print some information */
@@ -1383,9 +1383,9 @@ r_init_scroll(struct scroll *scroll)
 }
 
 static int
-r_init(const char *path)
+r_init(struct rodent *r, const char *path)
 {
-	struct device *dev = &rodent.dev;
+	struct device *dev = &r->dev;
 	enum device_type type;
 	int fd;
 
@@ -1435,16 +1435,16 @@ r_init(const char *path)
 	}
 	(void)ioctl(fd, EVIOCGUNIQ(sizeof(dev->uniq) - 1), dev->uniq);
 
-	rodent.quirks = quirks_fetch_for_device(quirks, dev);
+	r->quirks = quirks_fetch_for_device(quirks, dev);
 
 	r_init_buttons();
-	r_init_scroll(&rodent.scroll);
+	r_init_scroll(&r->scroll);
 	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
 		r_init_accel();
-		r_init_touchpad_hw(fd, rodent.quirks, &rodent.tphw);
-		r_init_touchpad_info(rodent.quirks, &rodent.tphw, &rodent.tpinfo);
-		r_init_touchpad_accel(&rodent.tphw, &rodent.accel);
+		r_init_touchpad_hw(fd, r->quirks, &r->tphw);
+		r_init_touchpad_info(r->quirks, &r->tphw, &r->tpinfo);
+		r_init_touchpad_accel(&r->tphw, &r->accel);
 		break;
 
 	case DEVICE_TYPE_MOUSE:
@@ -1457,7 +1457,7 @@ r_init(const char *path)
 		break;
 	}
 
-	quirks_unref(rodent.quirks);
+	quirks_unref(r->quirks);
 
 	debug("port: %s  type: %s  model: %s", path, r_name(type), dev->name);
 
