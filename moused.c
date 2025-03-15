@@ -175,6 +175,8 @@ static const char *quirks_path = QUIRKSDIR;
 static struct quirks_context *quirks;
 
 static u_int	opt_wmode;
+static bool	opt_e3b_enabled = false;
+static int	opt_e3b_button2timeout = -1;
 
 static bool	opt_drift_terminate = false;
 static u_int	opt_drift_distance = 4;		/* max steps X+Y */
@@ -431,9 +433,6 @@ static struct rodent {
 		.clickthreshold = DFLT_CLICKTHRESHOLD,
 		.zmap = { 0, 0, 0, 0 },
 	},
-	.e3b = {
-		.button2timeout = DFLT_BUTTON2TIMEOUT,
-	},
 	.gest = {
 		.idletimeout = -1,
 	},
@@ -490,13 +489,13 @@ main(int argc, char *argv[])
 		switch(c) {
 
 		case '3':
-			rodent.e3b.enabled = true;
+			opt_e3b_enabled = true;
 			break;
 
 		case 'E':
-			rodent.e3b.button2timeout = atoi(optarg);
-			if ((rodent.e3b.button2timeout < 0) ||
-			    (rodent.e3b.button2timeout > MAX_BUTTON2TIMEOUT)) {
+			opt_e3b_button2timeout = atoi(optarg);
+			if ((opt_e3b_button2timeout < 0) ||
+			    (opt_e3b_button2timeout > MAX_BUTTON2TIMEOUT)) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
@@ -1139,6 +1138,14 @@ r_init_buttons(void)
 
 	clock_gettime(CLOCK_MONOTONIC_FAST, &ts);
 
+	*e3b = (struct e3bstate) {
+		.enabled = false,
+		.button2timeout = DFLT_BUTTON2TIMEOUT,
+	};
+	if (opt_e3b_enabled)
+		e3b->enabled = true;
+	if (opt_e3b_button2timeout >= 0)
+		e3b->button2timeout = opt_e3b_button2timeout;
 	e3b->mouse_button_state = S0;
 	e3b->mouse_button_state_ts = ts;
 	e3b->mouse_move_delayed = 0;
