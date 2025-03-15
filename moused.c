@@ -187,6 +187,8 @@ static double	opt_expoffset = 1.0;
 
 static bool	opt_virtual_scroll = false;
 static bool	opt_hvirtual_scroll = false;
+static int	opt_scroll_speed = -1;
+static int	opt_scroll_threshold = -1;
 
 /* local variables */
 
@@ -361,6 +363,8 @@ enum scroll_state {
 };
 
 struct scroll {
+	bool	enable_vert;
+	bool	enable_hor;
 	int	threshold;	/* Movement distance before virtual scrolling */
 	int	speed;		/* Movement distance to rate of scrolling */
 	enum scroll_state state;
@@ -428,10 +432,6 @@ static struct rodentparam {
 	},
 	.e3b = {
 		.button2timeout = DFLT_BUTTON2TIMEOUT,
-	},
-	.scroll = {
-		.threshold = DFLT_SCROLLTHRESHOLD,
-		.speed = DFLT_SCROLLSPEED,
 	},
 	.gest = {
 		.idletimeout = -1,
@@ -599,8 +599,8 @@ main(int argc, char *argv[])
 			break;
 
 		case 'L':
-			rodent.scroll.speed = atoi(optarg);
-			if (rodent.scroll.speed < 0) {
+			opt_scroll_speed = atoi(optarg);
+			if (opt_scroll_speed < 0) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
@@ -631,8 +631,8 @@ main(int argc, char *argv[])
 			break;
 
 		case 'U':
-			rodent.scroll.threshold = atoi(optarg);
-			if (rodent.scroll.threshold < 0) {
+			opt_scroll_threshold = atoi(optarg);
+			if (opt_scroll_threshold < 0) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
@@ -877,7 +877,7 @@ moused(void)
 			if (flags == 0)
 				continue;
 
-			if (opt_virtual_scroll || opt_hvirtual_scroll) {
+			if (rodent.scroll.enable_vert || rodent.scroll.enable_hor) {
 				if (action0.button == MOUSE_BUTTON2DOWN) {
 					debug("[BUTTON2] flags:%08x buttons:%08x obuttons:%08x",
 					    action.flags, action.button, action.obutton);
@@ -908,7 +908,7 @@ moused(void)
 		debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
 		    action2.button, action2.dx, action2.dy, action2.dz);
 
-		if (opt_virtual_scroll || opt_hvirtual_scroll) {
+		if (rodent.scroll.enable_vert || rodent.scroll.enable_hor) {
 			/*
 			 * If *only* the middle button is pressed AND we are moving
 			 * the stick/trackpoint/nipple, scroll!
@@ -1362,6 +1362,26 @@ r_init_accel(void)
 		acc->is_exponential = true;
 }
 
+static void
+r_init_scroll(struct scroll *scroll)
+{
+	*scroll = (struct scroll) {
+		.enable_vert = false,
+		.enable_hor = false,
+		.threshold = DFLT_SCROLLTHRESHOLD,
+		.speed = DFLT_SCROLLSPEED,
+		.state = SCROLL_NOTSCROLLING,
+	};
+	if (opt_virtual_scroll)
+		scroll->enable_vert = true;
+	if (opt_hvirtual_scroll)
+		scroll->enable_hor = true;
+	if (opt_scroll_speed >= 0)
+		scroll->speed = opt_scroll_speed;
+	if (opt_scroll_threshold >= 0)
+		scroll->threshold = opt_scroll_threshold;
+}
+
 static int
 r_init(const char *path)
 {
@@ -1418,6 +1438,7 @@ r_init(const char *path)
 	rodent.quirks = quirks_fetch_for_device(quirks, dev);
 
 	r_init_buttons();
+	r_init_scroll(&rodent.scroll);
 	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
 		r_init_accel();
@@ -1733,7 +1754,7 @@ r_vscroll(mousestatus_t *act)
 		/* Middle button down, waiting for movement threshold */
 		if (act->dy == 0 && act->dx == 0)
 			break;
-		if (opt_virtual_scroll) {
+		if (sc->enable_vert) {
 			sc->movement += act->dy;
 			if (sc->movement < -sc->threshold) {
 				sc->state = SCROLL_SCROLLING;
@@ -1741,7 +1762,7 @@ r_vscroll(mousestatus_t *act)
 				sc->state = SCROLL_SCROLLING;
 			}
 		}
-		if (opt_hvirtual_scroll) {
+		if (sc->enable_hor) {
 			sc->hmovement += act->dx;
 			if (sc->hmovement < -sc->threshold) {
 				sc->state = SCROLL_SCROLLING;
@@ -1753,7 +1774,7 @@ r_vscroll(mousestatus_t *act)
 			sc->movement = sc->hmovement = 0;
 		break;
 	case SCROLL_SCROLLING:
-		if (opt_virtual_scroll) {
+		if (sc->enable_vert) {
 			sc->movement += act->dy;
 			debug("SCROLL: %d", sc->movement);
 			if (sc->movement < -sc->speed) {
@@ -1767,7 +1788,7 @@ r_vscroll(mousestatus_t *act)
 				sc->movement = 0;
 			}
 		}
-		if (opt_hvirtual_scroll) {
+		if (sc->enable_hor) {
 			sc->hmovement += act->dx;
 			debug("HORIZONTAL SCROLL: %d", sc->hmovement);
 
