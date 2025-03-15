@@ -214,6 +214,8 @@ struct tpcaps {
 	int	max_y;
 	int	res_x;	/* dots per mm */
 	int	res_y;	/* dots per mm */
+	int	min_p;
+	int	max_p;
 };
 
 struct tpinfo {
@@ -1216,23 +1218,25 @@ r_init_touchpad(int fd, struct quirks *q, struct tpcaps *tphw,
 	if (bit_test(abs_bits, ABS_PRESSURE) &&
 	    ioctl(fd, EVIOCGABS(ABS_PRESSURE), &ai) >= 0) {
 		tphw->cap_pressure = true;
-		if (quirks_get_range(q, QUIRK_ATTR_PRESSURE_RANGE, &r)) {
-			if (r.upper == 0 && r.lower == 0) {
-				debug("pressure-based touch detection disabled");
-				tphw->cap_pressure = false;
-			} else {
-				tpinfo->min_pressure_lo = r.lower;
-				tpinfo->min_pressure_hi = r.upper;
-			}
-		}
-		if (tpinfo->min_pressure_hi > ai.maximum ||
-		    tpinfo->min_pressure_hi < ai.minimum ||
-		    tpinfo->min_pressure_lo > ai.maximum ||
-		    tpinfo->min_pressure_lo < ai.minimum) {
+		tphw->min_p = ai.minimum;
+		tphw->max_p = ai.maximum;
+	}
+	if (tphw->cap_pressure &&
+	    quirks_get_range(q, QUIRK_ATTR_PRESSURE_RANGE, &r)) {
+		if (r.upper == 0 && r.lower == 0) {
+			debug("pressure-based touch detection disabled");
+			tphw->cap_pressure = false;
+		} else if (r.upper > tphw->max_p || r.upper < tphw->min_p ||
+			   r.lower > tphw->max_p || r.lower < tphw->min_p) {
 			debug("discarding out-of-bounds pressure range %d:%d",
-			    tpinfo->min_pressure_hi, tpinfo->min_pressure_lo);
+			    r.lower, r.upper);
 			tphw->cap_pressure = false;
 		}
+	}
+	if (tphw->cap_pressure &&
+	    quirks_get_range(q, QUIRK_ATTR_PRESSURE_RANGE, &r)) {
+		tpinfo->min_pressure_lo = r.lower;
+		tpinfo->min_pressure_hi = r.upper;
 		quirks_get_uint32(q, QUIRK_ATTR_PALM_PRESSURE_THRESHOLD,
 		    &tpinfo->max_pressure);
 		quirks_get_uint32(q, MOUSED_TAP_PRESSURE_THRESHOLD,
