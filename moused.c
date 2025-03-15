@@ -463,7 +463,8 @@ static void	r_vscroll(mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
 static bool	r_installmap(char *arg);
 static char *	r_installzmap(char *arg, char **argv, int argc, int* idx);
-static void	r_map(mousestatus_t *act1, mousestatus_t *act2);
+static void	r_map(mousestatus_t *act1, mousestatus_t *act2,
+		    struct btstate *bt);
 static void	r_timestamp(mousestatus_t *act);
 static bool	r_timeout(void);
 static void	r_move(mousestatus_t *act, struct accel *acc);
@@ -906,7 +907,7 @@ moused(void)
 			continue;
 
 		/* handler detected action */
-		r_map(&action, &action2);
+		r_map(&action, &action2, &r->btstate);
 		debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
 		    action2.button, action2.dx, action2.dy, action2.dz);
 
@@ -943,7 +944,7 @@ moused(void)
 		if ((r->btstate.zmap[0] > 0) && (action.dz != 0)) {
 			action.obutton = action.button;
 			action.dx = action.dy = action.dz = 0;
-			r_map(&action, &action2);
+			r_map(&action, &action2, &r->btstate);
 			debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
 			    action2.button, action2.dx, action2.dy, action2.dz);
 
@@ -2012,9 +2013,8 @@ r_installzmap(char *arg, char **argv, int argc, int* idx)
 }
 
 static void
-r_map(mousestatus_t *act1, mousestatus_t *act2)
+r_map(mousestatus_t *act1, mousestatus_t *act2, struct btstate *bt)
 {
-	struct btstate *bt = &rodent.btstate;
 	int pb;
 	int pbuttons;
 	int lbuttons;
