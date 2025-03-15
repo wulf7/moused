@@ -174,6 +174,8 @@ static const char *config_file = CONFDIR "/moused.conf";
 static const char *quirks_path = QUIRKSDIR;
 static struct quirks_context *quirks;
 
+static u_int	opt_wmode;
+
 static bool	opt_drift_terminate = false;
 static u_int	opt_drift_distance = 4;		/* max steps X+Y */
 static u_int	opt_drift_time = 500;		/* ms */
@@ -294,6 +296,7 @@ struct button_state {
 };
 
 struct btstate {
+	u_int	wmode;		/* wheel mode button number */
 	long 	clickthreshold;	/* double click speed in msec */
 	struct button_state	bstate[MOUSE_MAXBUTTON]; /* button state */
 	struct button_state	*mstate[MOUSE_MAXBUTTON];/* mapped button st.*/
@@ -407,7 +410,6 @@ struct accel {
 static struct rodent {
 	struct device dev;	/* Device */
 	struct quirks *quirks;	/* Configuration file and quirks */
-	int wmode;		/* wheel mode button number */
 	int mfd;		/* mouse file descriptor */
 	int cfd;		/* /dev/consolectl file descriptor */
 	struct btstate btstate;	/* button status */
@@ -423,7 +425,6 @@ static struct rodent {
 	.dev.path = NULL,
 	.dev.type = DEVICE_TYPE_UNKNOWN,
 	.quirks = NULL,
-	.wmode = 0,
 	.mfd = -1,
 	.cfd = -1,
 	.btstate = {
@@ -569,7 +570,7 @@ main(int argc, char *argv[])
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
-			rodent.wmode = 1 << (i - 1);
+			opt_wmode = 1 << (i - 1);
 			break;
 
 		case 'z':
@@ -1119,6 +1120,9 @@ r_init_buttons(void)
 	struct e3bstate *e3b = &rodent.e3b;
 	struct timespec ts;
 	int i, j;
+
+	if (opt_wmode != 0)
+		bt->wmode = opt_wmode;
 
 	/* fix Z axis mapping */
 	for (i = 0; i < ZMAP_MAXBUTTON; ++i) {
@@ -2019,8 +2023,8 @@ r_map(mousestatus_t *act1, mousestatus_t *act2)
 	lbuttons = 0;
 
 	act2->obutton = act2->button;
-	if (pbuttons & rodent.wmode) {
-		pbuttons &= ~rodent.wmode;
+	if (pbuttons & bt->wmode) {
+		pbuttons &= ~bt->wmode;
 		act1->dz = act1->dy;
 		act1->dx = 0;
 		act1->dy = 0;
