@@ -1115,10 +1115,8 @@ r_name(int type)
 }
 
 static void
-r_init_buttons(void)
+r_init_buttons(struct btstate *bt, struct e3bstate *e3b)
 {
-	struct btstate *bt = &rodent.btstate;
-	struct e3bstate *e3b = &rodent.e3b;
 	struct timespec ts;
 	int i, j;
 
@@ -1448,7 +1446,7 @@ r_init(struct rodent *r, const char *path)
 
 	r->quirks = quirks_fetch_for_device(quirks, dev);
 
-	r_init_buttons();
+	r_init_buttons(&r->btstate, &r->e3b);
 	r_init_scroll(&r->scroll);
 	r_init_accel(r->quirks, &r->accel);
 	switch (type) {
