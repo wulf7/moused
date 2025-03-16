@@ -405,9 +405,6 @@ static struct rodent {
 	.quirks = NULL,
 	.mfd = -1,
 	.cfd = -1,
-	.gest = {
-		.idletimeout = -1,
-	},
 };
 
 /* global variables */
@@ -1346,6 +1343,12 @@ r_init_touchpad_accel(struct tpcaps *tphw, struct accel *accel)
 }
 
 static void
+r_init_touchpad_gesture(struct tpstate *gest)
+{
+	gest->idletimeout = -1;
+}
+
+static void
 r_init_drift(void)
 {
 	struct quirks *q = rodent.quirks;
@@ -1487,6 +1490,7 @@ r_init(struct rodent *r, const char *path)
 		r_init_touchpad_hw(fd, r->quirks, &r->tphw);
 		r_init_touchpad_info(r->quirks, &r->tphw, &r->tpinfo);
 		r_init_touchpad_accel(&r->tphw, &r->accel);
+		r_init_touchpad_gesture(&r->gest);
 		break;
 
 	case DEVICE_TYPE_MOUSE:
