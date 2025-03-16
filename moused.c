@@ -456,7 +456,7 @@ static void	r_vscroll_detect(mousestatus_t *act);
 static void	r_vscroll(mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
 static bool	r_installmap(char *arg, struct btstate *bt);
-static char *	r_installzmap(char *arg, char **argv, int argc, int* idx, struct btstate *bt);
+static char *	r_installzmap(char **argv, int argc, int* idx, struct btstate *bt);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2,
 		    struct btstate *bt);
 static void	r_timestamp(mousestatus_t *act, struct btstate *bt,
@@ -570,7 +570,8 @@ main(int argc, char *argv[])
 			break;
 
 		case 'z':
-			errstr = r_installzmap(optarg, argv, argc, &optind,
+			--optind;
+			errstr = r_installzmap(argv, argc, &optind,
 			    &rodent.btstate);
 			if (errstr != NULL) {
 				warnx("%s", errstr);
@@ -1979,31 +1980,35 @@ r_installmap(char *arg, struct btstate *bt)
 }
 
 static char *
-r_installzmap(char *arg, char **argv, int argc, int* idx, struct btstate *bt)
+r_installzmap(char **argv, int argc, int* idx, struct btstate *bt)
 {
 	char *errstr;
 	int i, j;
 
-	if (strcmp(arg, "x") == 0) {
+	if (strcmp(argv[*idx], "x") == 0) {
 		bt->zmap[0] = MOUSE_XAXIS;
+		++*idx;
 		return (NULL);
 	}
-	if (strcmp(arg, "y") == 0) {
+	if (strcmp(argv[*idx], "y") == 0) {
 		bt->zmap[0] = MOUSE_YAXIS;
+		++*idx;
 		return (NULL);
 	}
-	i = atoi(arg);
+	i = atoi(argv[*idx]);
 	/*
 	 * Use button i for negative Z axis movement and
 	 * button (i + 1) for positive Z axis movement.
 	 */
 	if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
-		asprintf(&errstr, "invalid argument `%s'", optarg);
+		asprintf(&errstr, "invalid argument `%s'", argv[*idx]);
+		++*idx;
 		return (errstr);
 	}
 	bt->zmap[0] = i;
 	bt->zmap[1] = i + 1;
-	debug("optind: %d, optarg: '%s'", *idx, arg);
+	debug("optind: %d, optarg: '%s'", *idx, argv[*idx]);
+	++*idx;
 	for (j = 1; j < ZMAP_MAXBUTTON; ++j) {
 		if ((*idx >= argc) || !isdigit(*argv[*idx]))
 			break;
