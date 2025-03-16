@@ -475,7 +475,7 @@ main(int argc, char *argv[])
 	pid_t mpid;
 	int c;
 	int	i;
-	int	j;
+	u_long ul;
 	char *errstr;
 
 	while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:dfghi:m:p:q:w:z:"))
@@ -487,12 +487,14 @@ main(int argc, char *argv[])
 			break;
 
 		case 'E':
-			opt_e3b_button2timeout = atoi(optarg);
-			if ((opt_e3b_button2timeout < 0) ||
-			    (opt_e3b_button2timeout > MAX_BUTTON2TIMEOUT)) {
+			errno = 0;
+			ul = strtoul(optarg, NULL, 10);
+			if ((ul == 0 && errno != 0) ||
+			     ul > MAX_BUTTON2TIMEOUT) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
+			opt_e3b_button2timeout = ul;
 			break;
 
 		case 'a':
@@ -559,12 +561,12 @@ main(int argc, char *argv[])
 			break;
 
 		case 'w':
-			i = atoi(optarg);
-			if ((i <= 0) || (i > MOUSE_MAXBUTTON)) {
+			ul = strtoul(optarg, NULL, 10);
+			if (ul == 0 || ul > MOUSE_MAXBUTTON) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
-			opt_wmode = 1 << (i - 1);
+			opt_wmode = 1 << (ul - 1);
 			break;
 
 		case 'z':
@@ -578,12 +580,12 @@ main(int argc, char *argv[])
 			break;
 
 		case 'C':
-			opt_clickthreshold = atoi(optarg);
-			if ((opt_clickthreshold < 0) ||
-			    (opt_clickthreshold > MAX_CLICKTHRESHOLD)) {
+			ul = strtoul(optarg, NULL, 10);
+			if (ul > MAX_CLICKTHRESHOLD) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
+			opt_clickthreshold = ul;
 			break;
 
 		case 'H':
@@ -595,11 +597,13 @@ main(int argc, char *argv[])
 			break;
 
 		case 'L':
-			opt_scroll_speed = atoi(optarg);
-			if (opt_scroll_speed < 0) {
+			errno = 0;
+			ul = strtoul(optarg, NULL, 10);
+			if ((ul == 0 && errno != 0) || ul > INT_MAX) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
+			opt_scroll_speed = ul;
 			break;
 
 		case 'q':
@@ -627,11 +631,13 @@ main(int argc, char *argv[])
 			break;
 
 		case 'U':
-			opt_scroll_threshold = atoi(optarg);
-			if (opt_scroll_threshold < 0) {
+			errno = 0;
+			ul = strtoul(optarg, NULL, 10);
+			if ((ul == 0 && errno != 0) || ul > INT_MAX) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
+			opt_scroll_threshold = ul;
 			break;
 
 		case 'h':
@@ -1951,8 +1957,8 @@ skipspace(char *s)
 static bool
 r_installmap(char *arg, struct btstate *bt)
 {
-	int pbutton;
-	int lbutton;
+	u_long pbutton;
+	u_long lbutton;
 	char *s;
 
 	while (*arg) {
@@ -1963,7 +1969,7 @@ r_installmap(char *arg, struct btstate *bt)
 		arg = skipspace(arg);
 		if ((arg <= s) || (*arg != '='))
 			return (false);
-		lbutton = atoi(s);
+		lbutton = strtoul(s, NULL, 10);
 
 		arg = skipspace(++arg);
 		s = arg;
@@ -1971,11 +1977,11 @@ r_installmap(char *arg, struct btstate *bt)
 			++arg;
 		if ((arg <= s) || (!isspace(*arg) && (*arg != '\0')))
 			return (false);
-		pbutton = atoi(s);
+		pbutton = strtoul(s, NULL, 10);
 
-		if ((lbutton <= 0) || (lbutton > MOUSE_MAXBUTTON))
+		if (lbutton == 0 || lbutton > MOUSE_MAXBUTTON)
 			return (false);
-		if ((pbutton <= 0) || (pbutton > MOUSE_MAXBUTTON))
+		if (pbutton == 0 || pbutton > MOUSE_MAXBUTTON)
 			return (false);
 		p2l[pbutton - 1] = 1 << (lbutton - 1);
 		bt->mstate[lbutton - 1] = &bt->bstate[pbutton - 1];
