@@ -478,9 +478,6 @@ main(int argc, char *argv[])
 	int	j;
 	char *errstr;
 
-	for (i = 0; i < MOUSE_MAXBUTTON; ++i)
-		rodent.btstate.mstate[i] = &rodent.btstate.bstate[i];
-
 	while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:dfghi:m:p:q:w:z:"))
 	    != -1) {
 		switch(c) {
@@ -551,7 +548,7 @@ main(int argc, char *argv[])
 			break;
 
 		case 'm':
-			if (!r_installmap(optarg, &rodent.btstate)) {
+			if (!r_installmap(optarg, &opt_btstate)) {
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
@@ -1122,6 +1119,12 @@ r_init_buttons(struct btstate *bt, struct e3bstate *e3b)
 		.clickthreshold = DFLT_CLICKTHRESHOLD,
 		.zmap = { 0, 0, 0, 0 },
 	};
+	for (i = 0; i < MOUSE_MAXBUTTON; ++i) {
+		j = i;
+		if (opt_btstate.mstate[i] != NULL)
+			j = opt_btstate.mstate[i] - opt_btstate.bstate;
+		bt->mstate[i] = bt->bstate + j;
+	}
 
 	if (opt_btstate.zmap[0] != 0)
 		memcpy(bt->zmap, opt_btstate.zmap, sizeof(bt->zmap));
