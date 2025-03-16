@@ -1994,7 +1994,7 @@ static char *
 r_installzmap(char **argv, int argc, int* idx, struct btstate *bt)
 {
 	char *errstr;
-	int i, j;
+	u_long i, j;
 
 	if (strcmp(argv[*idx], "x") == 0) {
 		bt->zmap[0] = MOUSE_XAXIS;
@@ -2006,12 +2006,12 @@ r_installzmap(char **argv, int argc, int* idx, struct btstate *bt)
 		++*idx;
 		return (NULL);
 	}
-	i = atoi(argv[*idx]);
+	i = strtoul(argv[*idx], NULL, 10);
 	/*
 	 * Use button i for negative Z axis movement and
 	 * button (i + 1) for positive Z axis movement.
 	 */
-	if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
+	if (i == 0 || i >= MOUSE_MAXBUTTON) {
 		asprintf(&errstr, "invalid argument `%s'", argv[*idx]);
 		++*idx;
 		return (errstr);
@@ -2023,8 +2023,8 @@ r_installzmap(char **argv, int argc, int* idx, struct btstate *bt)
 	for (j = 1; j < ZMAP_MAXBUTTON; ++j) {
 		if ((*idx >= argc) || !isdigit(*argv[*idx]))
 			break;
-		i = atoi(argv[*idx]);
-		if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
+		i = strtoul(argv[*idx], NULL, 10);
+		if (i == 0 || i >= MOUSE_MAXBUTTON) {
 			asprintf(&errstr, "invalid argument `%s'", argv[*idx]);
 			return (errstr);
 		}
