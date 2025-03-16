@@ -416,6 +416,7 @@ static u_int	opt_wmode;
 static int	opt_clickthreshold = -1;
 static bool	opt_e3b_enabled = false;
 static int	opt_e3b_button2timeout = -1;
+static struct btstate opt_btstate;
 
 static bool	opt_drift_terminate = false;
 static u_int	opt_drift_distance = 4;		/* max steps X+Y */
@@ -571,8 +572,7 @@ main(int argc, char *argv[])
 
 		case 'z':
 			--optind;
-			errstr = r_installzmap(argv, argc, &optind,
-			    &rodent.btstate);
+			errstr = r_installzmap(argv, argc, &optind, &opt_btstate);
 			if (errstr != NULL) {
 				warnx("%s", errstr);
 				free(errstr);
@@ -1120,9 +1120,11 @@ r_init_buttons(struct btstate *bt, struct e3bstate *e3b)
 
 	*bt = (struct btstate) {
 		.clickthreshold = DFLT_CLICKTHRESHOLD,
-//		.zmap = { 0, 0, 0, 0 },
+		.zmap = { 0, 0, 0, 0 },
 	};
 
+	if (opt_btstate.zmap[0] > 0)
+		memcpy(bt->zmap, opt_btstate.zmap, sizeof(bt->zmap));
 	if (opt_clickthreshold >= 0)
 		bt->clickthreshold = opt_clickthreshold;
 	if (opt_wmode != 0)
