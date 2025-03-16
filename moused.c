@@ -1349,11 +1349,8 @@ r_init_touchpad_gesture(struct tpstate *gest)
 }
 
 static void
-r_init_drift(void)
+r_init_drift(struct quirks *q, struct drift *d)
 {
-	struct quirks *q = rodent.quirks;
-	struct drift *d = &rodent.drift;
-
 	if (opt_drift_terminate) {
 		d->terminate = true;
 		d->distance = opt_drift_distance;
@@ -1494,7 +1491,7 @@ r_init(struct rodent *r, const char *path)
 		break;
 
 	case DEVICE_TYPE_MOUSE:
-		r_init_drift();
+		r_init_drift(r->quirks, &r->drift);
 		break;
 
 	default:
