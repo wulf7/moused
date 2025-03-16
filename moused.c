@@ -265,7 +265,7 @@ struct btstate {
 	int 	clickthreshold;	/* double click speed in msec */
 	struct button_state	bstate[MOUSE_MAXBUTTON]; /* button state */
 	struct button_state	*mstate[MOUSE_MAXBUTTON];/* mapped button st.*/
-	u_int	zmap[ZMAP_MAXBUTTON];/* MOUSE_{X|Y}AXIS or a button number */
+	int	zmap[ZMAP_MAXBUTTON];/* MOUSE_{X|Y}AXIS or a button number */
 	struct button_state	zstate[ZMAP_MAXBUTTON];	 /* Z/W axis state */
 };
 
@@ -942,7 +942,7 @@ moused(void)
 		 * button, we need to cook up a corresponding button `up' event
 		 * after sending a button `down' event.
 		 */
-		if ((r->btstate.zmap[0] != 0) && (action.dz != 0)) {
+		if ((r->btstate.zmap[0] > 0) && (action.dz != 0)) {
 			action.obutton = action.button;
 			action.dx = action.dy = action.dz = 0;
 			r_map(&action, &action2, &r->btstate);
@@ -1141,7 +1141,7 @@ r_init_buttons(struct btstate *bt, struct e3bstate *e3b)
 
 	/* fix Z axis mapping */
 	for (i = 0; i < ZMAP_MAXBUTTON; ++i) {
-		if (bt->zmap[i] == 0)
+		if (bt->zmap[i] <= 0)
 			continue;
 		for (j = 0; j < MOUSE_MAXBUTTON; ++j) {
 			if (bt->mstate[j] == &bt->bstate[bt->zmap[i] - 1])
@@ -1994,7 +1994,7 @@ static char *
 r_installzmap(char **argv, int argc, int* idx, struct btstate *bt)
 {
 	char *errstr;
-	u_long i, j;
+	int i, j;
 
 	if (strcmp(argv[*idx], "x") == 0) {
 		bt->zmap[0] = MOUSE_XAXIS;
@@ -2006,12 +2006,12 @@ r_installzmap(char **argv, int argc, int* idx, struct btstate *bt)
 		++*idx;
 		return (NULL);
 	}
-	i = strtoul(argv[*idx], NULL, 10);
+	i = atoi(argv[*idx]);
 	/*
 	 * Use button i for negative Z axis movement and
 	 * button (i + 1) for positive Z axis movement.
 	 */
-	if ((i == 0) || (i > MOUSE_MAXBUTTON - 1)) {
+	if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
 		asprintf(&errstr, "invalid argument `%s'", argv[*idx]);
 		++*idx;
 		return (errstr);
@@ -2023,8 +2023,8 @@ r_installzmap(char **argv, int argc, int* idx, struct btstate *bt)
 	for (j = 1; j < ZMAP_MAXBUTTON; ++j) {
 		if ((*idx >= argc) || !isdigit(*argv[*idx]))
 			break;
-		i = strtoul(argv[*idx], NULL, 10);
-		if ((i == 0) || (i > MOUSE_MAXBUTTON - 1)) {
+		i = atoi(argv[*idx]);
+		if ((i <= 0) || (i > MOUSE_MAXBUTTON - 1)) {
 			asprintf(&errstr, "invalid argument `%s'", argv[*idx]);
 			return (errstr);
 		}
