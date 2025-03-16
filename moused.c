@@ -171,6 +171,18 @@ static const char *rnames[] = {
 	[DEVICE_TYPE_JOYSTICK]		= "joystick",
 };
 
+/* Default phisical to logical button mapping */
+static const u_int default_p2l[MOUSE_MAXBUTTON] = {
+    MOUSE_BUTTON1DOWN, MOUSE_BUTTON2DOWN, MOUSE_BUTTON3DOWN, MOUSE_BUTTON4DOWN,
+    MOUSE_BUTTON5DOWN, MOUSE_BUTTON6DOWN, MOUSE_BUTTON7DOWN, MOUSE_BUTTON8DOWN,
+    0x00000100,        0x00000200,        0x00000400,        0x00000800,
+    0x00001000,        0x00002000,        0x00004000,        0x00008000,
+    0x00010000,        0x00020000,        0x00040000,        0x00080000,
+    0x00100000,        0x00200000,        0x00400000,        0x00800000,
+    0x01000000,        0x02000000,        0x04000000,        0x08000000,
+    0x10000000,        0x20000000,        0x40000000,
+};
+
 struct tpcaps {
 	bool	is_clickpad;
 	bool	is_topbuttonpad;
@@ -265,6 +277,7 @@ struct btstate {
 	int 	clickthreshold;	/* double click speed in msec */
 	struct button_state	bstate[MOUSE_MAXBUTTON]; /* button state */
 	struct button_state	*mstate[MOUSE_MAXBUTTON];/* mapped button st.*/
+	u_int	p2l[MOUSE_MAXBUTTON];/* phisical to logical button mapping */
 	int	zmap[ZMAP_MAXBUTTON];/* MOUSE_{X|Y}AXIS or a button number */
 	struct button_state	zstate[ZMAP_MAXBUTTON];	 /* Z/W axis state */
 };
@@ -1125,8 +1138,12 @@ r_init_buttons(struct btstate *bt, struct e3bstate *e3b)
 		.clickthreshold = DFLT_CLICKTHRESHOLD,
 		.zmap = { 0, 0, 0, 0 },
 	};
+
+	memcpy(bt->p2l, default_p2l, sizeof(bt->p2l));
 	for (i = 0; i < MOUSE_MAXBUTTON; ++i) {
 		j = i;
+		if (opt_btstate.p2l[i] != 0)
+			bt->p2l[i] = opt_btstate.p2l[i];
 		if (opt_btstate.mstate[i] != NULL)
 			j = opt_btstate.mstate[i] - opt_btstate.bstate;
 		bt->mstate[i] = bt->bstate + j;
@@ -1934,18 +1951,6 @@ r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
 	return (changed);
 }
 
-/* phisical to logical button mapping */
-static int p2l[MOUSE_MAXBUTTON] = {
-    MOUSE_BUTTON1DOWN, MOUSE_BUTTON2DOWN, MOUSE_BUTTON3DOWN, MOUSE_BUTTON4DOWN,
-    MOUSE_BUTTON5DOWN, MOUSE_BUTTON6DOWN, MOUSE_BUTTON7DOWN, MOUSE_BUTTON8DOWN,
-    0x00000100,        0x00000200,        0x00000400,        0x00000800,
-    0x00001000,        0x00002000,        0x00004000,        0x00008000,
-    0x00010000,        0x00020000,        0x00040000,        0x00080000,
-    0x00100000,        0x00200000,        0x00400000,        0x00800000,
-    0x01000000,        0x02000000,        0x04000000,        0x08000000,
-    0x10000000,        0x20000000,        0x40000000,
-};
-
 static char *
 skipspace(char *s)
 {
@@ -1983,7 +1988,7 @@ r_installmap(char *arg, struct btstate *bt)
 			return (false);
 		if (pbutton == 0 || pbutton > MOUSE_MAXBUTTON)
 			return (false);
-		p2l[pbutton - 1] = 1 << (lbutton - 1);
+		bt->p2l[pbutton - 1] = 1 << (lbutton - 1);
 		bt->mstate[lbutton - 1] = &bt->bstate[pbutton - 1];
 	}
 
@@ -2092,7 +2097,7 @@ r_map(mousestatus_t *act1, mousestatus_t *act2, struct btstate *bt)
 	}
 
 	for (pb = 0; (pb < MOUSE_MAXBUTTON) && (pbuttons != 0); ++pb) {
-		lbuttons |= (pbuttons & 1) ? p2l[pb] : 0;
+		lbuttons |= (pbuttons & 1) ? bt->p2l[pb] : 0;
 		pbuttons >>= 1;
 	}
 	act2->button = lbuttons;
