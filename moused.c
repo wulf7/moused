@@ -1132,13 +1132,13 @@ r_init_buttons(struct btstate *bt, struct e3bstate *e3b)
 
 	/* fix Z axis mapping */
 	for (i = 0; i < ZMAP_MAXBUTTON; ++i) {
-		if (bt->zmap[i] != 0) {
-			for (j = 0; j < MOUSE_MAXBUTTON; ++j) {
-				if (bt->mstate[j] == &bt->bstate[bt->zmap[i] - 1])
-					bt->mstate[j] = &bt->zstate[i];
-			}
-			bt->zmap[i] = 1 << (bt->zmap[i] - 1);
+		if (bt->zmap[i] == 0)
+			continue;
+		for (j = 0; j < MOUSE_MAXBUTTON; ++j) {
+			if (bt->mstate[j] == &bt->bstate[bt->zmap[i] - 1])
+				bt->mstate[j] = &bt->zstate[i];
 		}
+		bt->zmap[i] = 1 << (bt->zmap[i] - 1);
 	}
 
 	clock_gettime(CLOCK_MONOTONIC_FAST, &ts);
