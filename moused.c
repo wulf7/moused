@@ -387,7 +387,6 @@ struct accel {
 
 static struct rodent {
 	struct device dev;	/* Device */
-	struct quirks *quirks;	/* Configuration file and quirks */
 	int mfd;		/* mouse file descriptor */
 	int cfd;		/* /dev/consolectl file descriptor */
 	struct btstate btstate;	/* button status */
@@ -402,7 +401,6 @@ static struct rodent {
 } rodent = {
 	.dev.path = NULL,
 	.dev.type = DEVICE_TYPE_UNKNOWN,
-	.quirks = NULL,
 	.mfd = -1,
 	.cfd = -1,
 };
@@ -1428,6 +1426,7 @@ static int
 r_init(struct rodent *r, const char *path)
 {
 	struct device *dev = &r->dev;
+	struct quirks *q;
 	enum device_type type;
 	int fd;
 
@@ -1477,21 +1476,21 @@ r_init(struct rodent *r, const char *path)
 	}
 	(void)ioctl(fd, EVIOCGUNIQ(sizeof(dev->uniq) - 1), dev->uniq);
 
-	r->quirks = quirks_fetch_for_device(quirks, dev);
+	q = quirks_fetch_for_device(quirks, dev);
 
 	r_init_buttons(&r->btstate, &r->e3b);
 	r_init_scroll(&r->scroll);
-	r_init_accel(r->quirks, &r->accel);
+	r_init_accel(q, &r->accel);
 	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
-		r_init_touchpad_hw(fd, r->quirks, &r->tphw);
-		r_init_touchpad_info(r->quirks, &r->tphw, &r->tpinfo);
+		r_init_touchpad_hw(fd, q, &r->tphw);
+		r_init_touchpad_info(q, &r->tphw, &r->tpinfo);
 		r_init_touchpad_accel(&r->tphw, &r->accel);
 		r_init_touchpad_gesture(&r->gest);
 		break;
 
 	case DEVICE_TYPE_MOUSE:
-		r_init_drift(r->quirks, &r->drift);
+		r_init_drift(q, &r->drift);
 		break;
 
 	default:
@@ -1499,7 +1498,7 @@ r_init(struct rodent *r, const char *path)
 		break;
 	}
 
-	quirks_unref(r->quirks);
+	quirks_unref(q);
 
 	debug("port: %s  type: %s  model: %s", path, r_name(type), dev->name);
 
