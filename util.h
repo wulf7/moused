@@ -49,6 +49,19 @@
 
 #define	EVENT_CODE_UNDEFINED 0xffff
 
+/**
+ * Define a cleanup function for the struct type foo with a matching
+ * foo_unref(). Use:
+ * DEFINE_UNREF_CLEANUP_FUNC(foo)
+ * _unref_(foo) struct foo *bar;
+ */
+#define DEFINE_UNREF_CLEANUP_FUNC(_type)		\
+	static inline void _type##_unrefp(struct _type **_p) {  \
+		if (*_p)					\
+			_type##_unref(*_p);			\
+	}							\
+	struct __useless_struct_to_allow_trailing_semicolon__
+
 /* Supported device interfaces */
 enum device_if {
 	DEVICE_IF_UNKNOWN = -1,

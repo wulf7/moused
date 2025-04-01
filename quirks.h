@@ -215,6 +215,8 @@ quirks_init_subsystem(const char *config_file,
 struct quirks_context *
 quirks_context_unref(struct quirks_context *ctx);
 
+DEFINE_UNREF_CLEANUP_FUNC(quirks_context);
+
 struct quirks_context *
 quirks_context_ref(struct quirks_context *ctx);
 
