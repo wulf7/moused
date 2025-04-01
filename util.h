@@ -49,6 +49,15 @@
 
 #define	EVENT_CODE_UNDEFINED 0xffff
 
+/* util-mem.h */
+
+/**
+ * Use: _unref_(foo) struct foo *bar;
+ *
+ * This requires foo_unrefp() to be present, use DEFINE_UNREF_CLEANUP_FUNC.
+ */
+#define _unref_(_type) __attribute__((cleanup(_type##_unrefp))) struct _type
+
 /**
  * Define a cleanup function for the struct type foo with a matching
  * foo_unref(). Use:
@@ -61,6 +70,27 @@
 			_type##_unref(*_p);			\
 	}							\
 	struct __useless_struct_to_allow_trailing_semicolon__
+
+static inline void*
+_steal(void *ptr) {
+	void **original = (void**)ptr;
+	void *swapped = *original;
+	*original = NULL;
+	return swapped;
+}
+
+/**
+ * Resets the pointer content and resets the data to NULL.
+ * This circumvents _cleanup_ handling for that pointer.
+ * Use:
+ *   _cleanup_free_ char *data = malloc();
+ *   return steal(&data);
+ *
+ */
+#define steal(ptr_) \
+  (typeof(*ptr_))_steal(ptr_)
+
+/* ! util-mem.h */
 
 /* Supported device interfaces */
 enum device_if {

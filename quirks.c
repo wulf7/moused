@@ -1399,7 +1399,7 @@ quirks_init_subsystem(const char *data_path,
 		      moused_log_handler log_handler,
 		      enum quirks_log_type log_type)
 {
-	struct quirks_context *ctx = zalloc(sizeof *ctx);
+	_unref_(quirks_context) *ctx = zalloc(sizeof *ctx);
 
 	assert(data_path);
 
@@ -1414,19 +1414,15 @@ quirks_init_subsystem(const char *data_path,
 	ctx->dmi = init_dmi();
 	ctx->dt = init_dt();
 	if (!ctx->dmi && !ctx->dt)
-		goto error;
+		return NULL;
 
 	if (!parse_files(ctx, data_path))
-		goto error;
+		return NULL;
 
 	if (override_file && !parse_file(ctx, override_file))
-		goto error;
+		return NULL;
 
-	return ctx;
-
-error:
-	quirks_context_unref(ctx);
-	return NULL;
+	return steal(&ctx);
 }
 
 struct quirks_context *
@@ -1818,7 +1814,6 @@ struct quirks *
 quirks_fetch_for_device(struct quirks_context *ctx,
 			struct device *device)
 {
-	struct quirks *q = NULL;
 	struct section *s;
 	struct match *m;
 
@@ -1827,7 +1822,7 @@ quirks_fetch_for_device(struct quirks_context *ctx,
 
 	qlog_debug(ctx, "%s: fetching quirks\n", device->path);
 
-	q = quirks_new();
+	_unref_(quirks) *q = quirks_new();
 
 	m = match_new(device, ctx->dmi, ctx->dt);
 
@@ -1838,13 +1833,12 @@ quirks_fetch_for_device(struct quirks_context *ctx,
 	match_free(m);
 
 	if (q->nproperties == 0) {
-		quirks_unref(q);
 		return NULL;
 	}
 
 	list_insert(&ctx->quirks, &q->link);
 
-	return q;
+	return steal(&q);
 }
 
 static inline struct property *
