@@ -46,6 +46,13 @@
 
 #define	EVENT_CODE_UNDEFINED 0xffff
 
+/* Supported device interfaces */
+enum device_if {
+	DEVICE_IF_UNKNOWN = -1,
+	DEVICE_IF_EVDEV = 0,
+	DEVICE_IF_SYSMOUSE,
+};
+
 /* Recognized device types */
 enum device_type {
 	DEVICE_TYPE_UNKNOWN = -1,
@@ -61,6 +68,7 @@ enum device_type {
 
 struct device {
 	const char *path;
+	enum device_if iftype;
 	enum device_type type;
 	char name[80];
 	char uniq[80];

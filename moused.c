@@ -93,10 +93,10 @@ _Static_assert(sizeof(bitstr_t) == sizeof(unsigned long),
 
 #define ID_NONE		0
 #define ID_PORT		1
-/* Was	ID_IF		2 */
+#define ID_IF		2
 #define ID_TYPE		4
 #define ID_MODEL	8
-#define ID_ALL		(ID_PORT | ID_TYPE | ID_MODEL)
+#define ID_ALL		(ID_PORT | ID_IF | ID_TYPE | ID_MODEL)
 
 /* Operations on timespecs */
 #define	tsclr(tvp)		timespecclear(tvp)
@@ -157,6 +157,12 @@ enum gesture {
 	GEST_MOVE,
 	GEST_VSCROLL,
 	GEST_HSCROLL,
+};
+
+/* interfaces (the table must be ordered by DEVICE_IF_XXX in util.h) */
+static const char *rifs[] = {
+	[DEVICE_IF_EVDEV]	= "evdev",
+	[DEVICE_IF_SYSMOUSE]	= "sysmouse",
 };
 
 /* types (the table must be ordered by DEVICE_TYPE_XXX in util.h) */
@@ -458,6 +464,7 @@ static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 		    __printflike(3, 4);
 
 static enum device_type	r_identify(int fd);
+static const char *r_if(enum device_if type);
 static const char *r_name(int type);
 static int	r_init(struct rodent *r, const char *path);
 static int	r_protocol(struct input_event *b, mousestatus_t *act);
@@ -546,6 +553,8 @@ main(int argc, char *argv[])
 				identify = ID_ALL;
 			else if (strcmp(optarg, "port") == 0)
 				identify = ID_PORT;
+			else if (strcmp(optarg, "if") == 0)
+				identify = ID_IF;
 			else if (strcmp(optarg, "type") == 0)
 				identify = ID_TYPE;
 			else if (strcmp(optarg, "model") == 0)
@@ -697,10 +706,13 @@ main(int argc, char *argv[])
 	/* print some information */
 	if (identify != ID_NONE) {
 		if (identify == ID_ALL)
-			printf("%s %s %s\n", rodent.dev.path,
+			printf("%s %s %s %s\n",
+			    rodent.dev.path, r_if(rodent.dev.iftype),
 			    r_name(rodent.dev.type), rodent.dev.name);
 		else if (identify & ID_PORT)
 			printf("%s\n", rodent.dev.path);
+		else if (identify & ID_IF)
+			printf("%s\n", r_if(rodent.dev.iftype));
 		else if (identify & ID_TYPE)
 			printf("%s\n", r_name(rodent.dev.type));
 		else if (identify & ID_MODEL)
@@ -1111,6 +1123,15 @@ r_identify(int fd)
 	}
 
 	return (type);
+}
+
+static const char *
+r_if(enum device_if type)
+{
+	const char *unknown = "unknown";
+
+	return (type == DEVICE_IF_UNKNOWN || type >= (int)nitems(rifs) ?
+	    unknown : rifs[type]);
 }
 
 static const char *
