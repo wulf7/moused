@@ -463,7 +463,9 @@ static void	usage(void);
 static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 		    __printflike(3, 4);
 
-static enum device_type	r_identify(int fd);
+static enum device_if	r_identify_if(int fd);
+static enum device_type	r_identify_evdev(int fd);
+static enum device_type	r_identify_sysmouse(int fd);
 static const char *r_if(enum device_if type);
 static const char *r_name(enum device_type type);
 static int	r_init(struct rodent *r, const char *path);
@@ -1054,9 +1056,21 @@ bit_find(bitstr_t *array, int start, int stop)
 	return (res != -1);
 }
 
+static enum device_if
+r_identify_if(int fd)
+{
+	int dummy;
+
+	if (ioctl(fd, EVIOCGVERSION, &dummy) >= 0)
+		return (DEVICE_IF_EVDEV);
+	if (ioctl(fd, MOUSE_GETLEVEL, &dummy) >= 0)
+		return (DEVICE_IF_SYSMOUSE);
+	return (DEVICE_IF_UNKNOWN);
+}
+
 /* Derived from EvdevProbe() function of xf86-input-evdev driver */
 static enum device_type
-r_identify(int fd)
+r_identify_evdev(int fd)
 {
 	enum device_type type;
 	bitstr_t bit_decl(key_bits, KEY_CNT); /* */
@@ -1125,6 +1139,13 @@ r_identify(int fd)
 	return (type);
 }
 
+static enum device_type
+r_identify_sysmouse(int fd __unused)
+{
+	/* All sysmouse devices act like mices */
+	return (DEVICE_TYPE_MOUSE);
+}
+
 static const char *
 r_if(enum device_if type)
 {
@@ -1141,6 +1162,72 @@ r_name(enum device_type type)
 
 	return (type == DEVICE_TYPE_UNKNOWN || type >= (int)nitems(rnames) ?
 	    unknown : rnames[type]);
+}
+
+static int
+r_init_dev_evdev(int fd, struct device *dev)
+{
+	if (grab && ioctl(fd, EVIOCGRAB, 1) == -1) {
+		logwarnx("unable to grab %s", dev->path);
+		return (errno);
+	}
+
+	if (ioctl(fd, EVIOCGNAME(sizeof(dev->name) - 1), dev->name) < 0) {
+		logwarnx("unable to get device %s name", dev->path);
+		return (errno);
+	}
+	/* Do not loop events */
+	if (strncmp(dev->name, "System mouse", sizeof(dev->name)) == 0) {
+		return (ENOTSUP);
+	}
+	if (ioctl(fd, EVIOCGID, &dev->id) < 0) {
+		logwarnx("unable to get device %s ID", dev->path);
+		return (errno);
+	}
+	(void)ioctl(fd, EVIOCGUNIQ(sizeof(dev->uniq) - 1), dev->uniq);
+
+	return (0);
+}
+
+static int
+r_init_dev_sysmouse(int fd, struct device *dev)
+{
+	mousemode_t mode;
+	int level;
+
+	level = 1;
+	if (ioctl(fd, MOUSE_SETLEVEL, &level) < 0) {
+		logwarnx("unable to MOUSE_SETLEVEL for device %s", dev->path);
+		return (errno);
+	}
+	if (ioctl(fd, MOUSE_GETLEVEL, &level) < 0) {
+		logwarnx("unable to MOUSE_GETLEVEL for device %s", dev->path);
+		return (errno);
+	}
+	if (level != 1) {
+		logwarnx("unable to set level to 1 for device %s", dev->path);
+		return (ENOTSUP);
+	}
+	memset(&mode, 0, sizeof(mode));
+	if (ioctl(fd, MOUSE_GETMODE, &mode) < 0) {
+		logwarnx("unable to MOUSE_GETMODE for device %s", dev->path);
+		return (errno);
+	}
+	if (mode.protocol != MOUSE_PROTO_SYSMOUSE) {
+		logwarnx("unable to set sysmouse protocol for device %s",
+		    dev->path);
+		return (ENOTSUP);
+	}
+	if (mode.packetsize != MOUSE_SYS_PACKETSIZE) {
+		logwarnx("unable to set sysmouse packet size for device %s",
+		    dev->path);
+		return (ENOTSUP);
+	}
+
+	/* TODO: Fill name, id and uniq from dev.* sysctls */
+	strlcpy(dev->name, dev->path, sizeof(dev->name));
+
+	return (0);
 }
 
 static void
@@ -1447,8 +1534,9 @@ r_init(struct rodent *r, const char *path)
 {
 	struct device *dev = &r->dev;
 	struct quirks *q;
+	enum device_if iftype;
 	enum device_type type;
-	int fd;
+	int fd, err;
 
 	fd = open(path, O_RDWR | O_NONBLOCK);
 	if (fd == -1) {
@@ -1456,7 +1544,26 @@ r_init(struct rodent *r, const char *path)
 		return (-errno);
 	}
 
-	switch (type = r_identify(fd)) {
+	iftype =  r_identify_if(fd);
+	switch (iftype) {
+	case DEVICE_IF_UNKNOWN:
+		debug("cannot determine interface type on %s", path);
+		close(fd);
+		return (-ENOTSUP);
+	case DEVICE_IF_EVDEV:
+		type = r_identify_evdev(fd);
+		break;
+	case DEVICE_IF_SYSMOUSE:
+		type = r_identify_sysmouse(fd);
+		break;
+	default:
+		debug("unsupported interface type: %s on %s",
+		    r_if(iftype), path);
+		close(fd);
+		return (-ENXIO);
+	}
+
+	switch (type) {
 	case DEVICE_TYPE_UNKNOWN:
 		debug("cannot determine device type on %s", path);
 		close(fd);
@@ -1471,30 +1578,27 @@ r_init(struct rodent *r, const char *path)
 		return (-ENXIO);
 	}
 
-	if (grab && ioctl(fd, EVIOCGRAB, 1) == -1) {
-		logwarnx("unable to grab %s", path);
-		close(fd);
-		return (-errno);
-	}
-
 	dev->path = path;
+	dev->iftype = iftype;
 	dev->type = type;
-	if (ioctl(fd, EVIOCGNAME(sizeof(dev->name) - 1), dev->name) < 0) {
-		logwarnx("unable to get device %s name", path);
-		close(fd);
-		return (-errno);
+	switch (iftype) {
+	case DEVICE_IF_EVDEV:
+		err = r_init_dev_evdev(fd, dev);
+		break;
+	case DEVICE_IF_SYSMOUSE:
+		err = r_init_dev_sysmouse(fd, dev);
+		break;
+	default:
+		debug("unsupported interface type: %s on %s",
+		    r_if(iftype), path);
+		err = ENXIO;
 	}
-	/* Do not loop events */
-	if (strncmp(dev->name, "System mouse", sizeof(dev->name)) == 0) {
+	if (err != 0) {
+		debug("failed to initialize device: %s %s on %s",
+		    r_if(iftype), r_name(type), path);
 		close(fd);
-		return (-ENOTSUP);
+		return (-err);
 	}
-	if (ioctl(fd, EVIOCGID, &dev->id) < 0) {
-		logwarnx("unable to get device %s ID", path);
-		close(fd);
-		return (-errno);
-	}
-	(void)ioctl(fd, EVIOCGUNIQ(sizeof(dev->uniq) - 1), dev->uniq);
 
 	q = quirks_fetch_for_device(quirks, dev);
 
@@ -1520,7 +1624,8 @@ r_init(struct rodent *r, const char *path)
 
 	quirks_unref(q);
 
-	debug("port: %s  type: %s  model: %s", path, r_name(type), dev->name);
+	debug("port: %s  interface: %s  type: %s  model: %s",
+	    path, r_if(iftype), r_name(type), dev->name);
 
 	return (fd);
 }
