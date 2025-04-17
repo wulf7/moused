@@ -254,7 +254,7 @@ information are:
 .Bl -tag -compact -width modelxxx
 .It Ar port
 Port (device file) name, i.e.\&
-.Pa /dev/cuau0 ,
+.Pa /dev/input/event0 ,
 .Pa /dev/ums0
 and
 .Pa /dev/psm0 .
@@ -264,14 +264,10 @@ Interface type:
 or
 .Dq sysmouse .
 .It Ar type
-Protocol type.
-It is one of the types listed under the
-.Fl t
-option below or
-.Ar sysmouse
-if the driver supports the
-.Ar sysmouse
-data format standard.
+Device type:
+.Dq mouse
+or
+.Dq touchpad .
 .It Ar model
 Mouse model.
 .It Ar all
