@@ -465,7 +465,7 @@ static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 
 static enum device_type	r_identify(int fd);
 static const char *r_if(enum device_if type);
-static const char *r_name(int type);
+static const char *r_name(enum device_type type);
 static int	r_init(struct rodent *r, const char *path);
 static int	r_protocol(struct input_event *b, mousestatus_t *act);
 static void	r_vscroll_detect(mousestatus_t *act);
@@ -1135,12 +1135,11 @@ r_if(enum device_if type)
 }
 
 static const char *
-r_name(int type)
+r_name(enum device_type type)
 {
 	const char *unknown = "unknown";
 
-	return (type == DEVICE_TYPE_UNKNOWN ||
-	    type >= (int)(sizeof(rnames) / sizeof(rnames[0])) ?
+	return (type == DEVICE_TYPE_UNKNOWN || type >= (int)nitems(rnames) ?
 	    unknown : rnames[type]);
 }
 
