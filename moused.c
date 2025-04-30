@@ -55,6 +55,7 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -160,9 +161,12 @@ enum gesture {
 };
 
 /* interfaces (the table must be ordered by DEVICE_IF_XXX in util.h) */
-static const char *rifs[] = {
-	[DEVICE_IF_EVDEV]	= "evdev",
-	[DEVICE_IF_SYSMOUSE]	= "sysmouse",
+static const struct {
+	char *name;
+	size_t p_size;
+} rifs[] = {
+	[DEVICE_IF_EVDEV]	= { "evdev",	sizeof(struct input_event) },
+	[DEVICE_IF_SYSMOUSE]	= { "sysmouse",	MOUSE_SYS_PACKETSIZE },
 };
 
 /* types (the table must be ordered by DEVICE_TYPE_XXX in util.h) */
@@ -469,7 +473,8 @@ static enum device_type	r_identify_sysmouse(int fd);
 static const char *r_if(enum device_if type);
 static const char *r_name(enum device_type type);
 static int	r_init(struct rodent *r, const char *path);
-static int	r_protocol(struct input_event *b, mousestatus_t *act);
+static int	r_protocol_evdev(struct input_event *ie, mousestatus_t *act);
+static int	r_protocol_sysmouse(uint8_t *pBuf, mousestatus_t *act);
 static void	r_vscroll_detect(mousestatus_t *act);
 static void	r_vscroll(mousestatus_t *act);
 static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
@@ -833,7 +838,11 @@ moused(void)
 	int timeout;
 	bool timeout_em3b;
 	struct pollfd fds;
-	struct input_event b;
+	union {
+		struct input_event ie;
+		uint8_t se[MOUSE_SYS_PACKETSIZE];
+	} b;
+	size_t b_size;
 	int flags;
 	int c;
 	int i;
@@ -845,6 +854,7 @@ moused(void)
 	/* process mouse data */
 	for (;;) {
 
+		b_size = rifs[r->dev.iftype].p_size;
 		fds.fd = r->mfd;
 		fds.events = POLLIN;
 		fds.revents = 0;
@@ -885,21 +895,23 @@ moused(void)
 			if (c > 0) {
 				if ((fds.revents & POLLIN) == 0)
 					return;
-				if (read(r->mfd, &b, sizeof(b)) == -1) {
+				if (read(r->mfd, &b, b_size) == -1) {
 					if (errno == EWOULDBLOCK)
 						continue;
 					else
 						return;
 				}
 			} else {
-				b.time.tv_sec = timeout == 0 ? 0 : LONG_MAX;
-				b.time.tv_usec = 0;
-				b.type = EV_SYN;
-				b.code = SYN_REPORT;
-				b.value = 1;
+				b.ie.time.tv_sec = timeout == 0 ? 0 : LONG_MAX;
+				b.ie.time.tv_usec = 0;
+				b.ie.type = EV_SYN;
+				b.ie.code = SYN_REPORT;
+				b.ie.value = 1;
 			}
 			r->gest.idletimeout = -1;
-			flags = r_protocol(&b, &action0);
+			flags = r->dev.iftype == DEVICE_IF_EVDEV ?
+			    r_protocol_evdev(&b.ie, &action0) :
+			    r_protocol_sysmouse(b.se, &action0);
 			if (flags == 0)
 				continue;
 
@@ -1152,7 +1164,7 @@ r_if(enum device_if type)
 	const char *unknown = "unknown";
 
 	return (type == DEVICE_IF_UNKNOWN || type >= (int)nitems(rifs) ?
-	    unknown : rifs[type]);
+	    unknown : rifs[type].name);
 }
 
 static const char *
@@ -1631,7 +1643,7 @@ r_init(struct rodent *r, const char *path)
 }
 
 static int
-r_protocol(struct input_event *ie, mousestatus_t *act)
+r_protocol_evdev(struct input_event *ie, mousestatus_t *act)
 {
 	struct tpcaps *tphw = &rodent.tphw;
 	struct tpinfo *tpinfo = &rodent.tpinfo;
@@ -1852,6 +1864,39 @@ r_protocol(struct input_event *ie, mousestatus_t *act)
 	 * We don't reset pBufP here yet, as there may be an additional data
 	 * byte in some protocols. See above.
 	 */
+
+	/* has something changed? */
+	act->flags = ((act->dx || act->dy || act->dz) ? MOUSE_POSCHANGED : 0)
+	    | (act->obutton ^ act->button);
+
+	return (act->flags);
+}
+
+static int
+r_protocol_sysmouse(uint8_t *pBuf, mousestatus_t *act)
+{
+	static int butmapmsc[8] = { /* sysmouse */
+	    0,
+	    MOUSE_BUTTON3DOWN,
+	    MOUSE_BUTTON2DOWN,
+	    MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN,
+	    MOUSE_BUTTON1DOWN,
+	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON3DOWN,
+	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN,
+	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN
+	};
+
+	debug("%02x %02x %02x %02x %02x %02x %02x %02x", pBuf[0], pBuf[1],
+	    pBuf[2], pBuf[3], pBuf[4], pBuf[5], pBuf[6], pBuf[7]);
+
+	if ((pBuf[0] & MOUSE_SYS_SYNCMASK) != MOUSE_SYS_SYNC)
+		return (0);
+
+	act->button = butmapmsc[(~pBuf[0]) & MOUSE_SYS_STDBUTTONS];
+	act->dx =    (signed char)(pBuf[1]) + (signed char)(pBuf[3]);
+	act->dy = - ((signed char)(pBuf[2]) + (signed char)(pBuf[4]));
+	act->dz = ((signed char)(pBuf[5] << 1) + (signed char)(pBuf[6] << 1)) >> 1;
+	act->button |= ((~pBuf[7] & MOUSE_SYS_EXTBUTTONS) << 3);
 
 	/* has something changed? */
 	act->flags = ((act->dx || act->dy || act->dz) ? MOUSE_POSCHANGED : 0)
