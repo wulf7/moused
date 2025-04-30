@@ -843,6 +843,7 @@ moused(void)
 		uint8_t se[MOUSE_SYS_PACKETSIZE];
 	} b;
 	size_t b_size;
+	ssize_t r_size;
 	int flags;
 	int c;
 	int i;
@@ -895,11 +896,17 @@ moused(void)
 			if (c > 0) {
 				if ((fds.revents & POLLIN) == 0)
 					return;
-				if (read(r->mfd, &b, b_size) == -1) {
+				r_size = read(r->mfd, &b, b_size);
+				if (r_size == -1) {
 					if (errno == EWOULDBLOCK)
 						continue;
 					else
 						return;
+				}
+				if (r_size != b_size) {
+					logwarn("Short read from mouse: "
+					    "%zd bytes", r_size);
+					continue;
 				}
 			} else {
 				b.ie.time.tv_sec = timeout == 0 ? 0 : LONG_MAX;
