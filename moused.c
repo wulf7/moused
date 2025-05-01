@@ -251,6 +251,12 @@ struct tpstate {
 	int		idletimeout;
 };
 
+struct tpad {
+	struct tpcaps	hw;	/* touchpad capabilities */
+	struct tpinfo	info;	/* touchpad gesture parameters */
+	struct tpstate	gest;	/* touchpad gesture state */
+};
+
 struct finger {
 	int	x;
 	int	y;
@@ -395,7 +401,7 @@ struct accel {
 	double lastlength[3];
 };
 
-static struct rodent {
+struct rodent {
 	struct device dev;	/* Device */
 	int mfd;		/* mouse file descriptor */
 	struct btstate btstate;	/* button status */
@@ -403,13 +409,13 @@ static struct rodent {
 	struct drift drift;
 	struct accel accel;	/* cursor acceleration state */
 	struct scroll scroll;	/* virtual scroll state */
-	struct tpcaps tphw;	/* touchpad capabilities */
-	struct tpinfo tpinfo;	/* touchpad gesture parameters */
-	struct tpstate gest;	/* touchpad gesture state */
+	struct tpad tp;		/* touchpad info and gesture state */
 	struct evstate ev;	/* event device state */
-} rodent;
+};
 
 /* global variables */
+
+static struct rodent *rodent;
 
 static int	debug = 0;
 static bool	nodaemon = false;
@@ -472,11 +478,15 @@ static const char *r_if(enum device_if type);
 static const char *r_name(enum device_type type);
 static struct rodent *r_init(const char *path);
 static void	r_deinit(struct rodent *r);
-static int	r_protocol_evdev(struct input_event *ie, mousestatus_t *act);
+static int	r_protocol_evdev(enum device_type type, struct tpad *tp,
+		    struct evstate *ev, struct input_event *ie,
+		    mousestatus_t *act);
 static int	r_protocol_sysmouse(uint8_t *pBuf, mousestatus_t *act);
-static void	r_vscroll_detect(mousestatus_t *act);
-static void	r_vscroll(mousestatus_t *act);
-static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans);
+static void	r_vscroll_detect(struct rodent *r, struct scroll *sc,
+		    mousestatus_t *act);
+static void	r_vscroll(struct scroll *sc, mousestatus_t *act);
+static int	r_statetrans(struct rodent *r, mousestatus_t *a1,
+		    mousestatus_t *a2, int trans);
 static bool	r_installmap(char *arg, struct btstate *bt);
 static char *	r_installzmap(char **argv, int argc, int* idx, struct btstate *bt);
 static void	r_map(mousestatus_t *act1, mousestatus_t *act2,
@@ -485,10 +495,10 @@ static void	r_timestamp(mousestatus_t *act, struct btstate *bt,
 		    struct e3bstate *e3b, struct drift *drift);
 static bool	r_timeout(struct e3bstate *e3b);
 static void	r_move(mousestatus_t *act, struct accel *acc);
-static void	r_click(mousestatus_t *act);
+static void	r_click(mousestatus_t *act, struct btstate *bt);
 static bool	r_drift(struct drift *, mousestatus_t *);
-static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
-		    struct timespec *time, mousestatus_t *ms);
+static enum gesture r_gestures(struct tpad *tp, int x0, int y0, int z, int w,
+		    int nfingers, struct timespec *time, mousestatus_t *ms);
 
 int
 main(int argc, char *argv[])
@@ -870,7 +880,7 @@ expoacc(struct accel *acc, int dx, int dy, int dz,
 static void
 moused(void)
 {
-	struct rodent *r = &rodent;
+	struct rodent *r = rodent;
 	mousestatus_t action0;		/* original mouse action */
 	mousestatus_t action;		/* interim buffer */
 	mousestatus_t action2;		/* mapped action */
@@ -904,12 +914,12 @@ moused(void)
 			timeout = 20;
 			timeout_em3b = true;
 		}
-		if (r->gest.idletimeout != -1) {
-			if (timeout == -1 || r->gest.idletimeout < timeout) {
-				timeout = r->gest.idletimeout;
+		if (r->tp.gest.idletimeout != -1) {
+			if (timeout == -1 || r->tp.gest.idletimeout < timeout) {
+				timeout = r->tp.gest.idletimeout;
 				timeout_em3b = false;
 			} else
-				r->gest.idletimeout -= timeout;
+				r->tp.gest.idletimeout -= timeout;
 		}
 
 		c = poll(&fds, 1, timeout);
@@ -922,7 +932,7 @@ moused(void)
 			action0.dx = action0.dy = action0.dz = 0;
 			action0.flags = flags = 0;
 			if (r_timeout(&r->e3b) &&
-			    r_statetrans(&action0, &action, A_TIMEOUT)) {
+			    r_statetrans(r, &action0, &action, A_TIMEOUT)) {
 				if (debug > 2)
 					debug("flags:%08x buttons:%08x obuttons:%08x",
 					    action.flags, action.button, action.obutton);
@@ -954,9 +964,10 @@ moused(void)
 				b.ie.code = SYN_REPORT;
 				b.ie.value = 1;
 			}
-			r->gest.idletimeout = -1;
+			r->tp.gest.idletimeout = -1;
 			flags = r->dev.iftype == DEVICE_IF_EVDEV ?
-			    r_protocol_evdev(&b.ie, &action0) :
+			    r_protocol_evdev(r->dev.type,
+			        &r->tp, &r->ev, &b.ie, &action0) :
 			    r_protocol_sysmouse(b.se, &action0);
 			if (flags == 0)
 				continue;
@@ -969,11 +980,11 @@ moused(void)
 					debug("[NOTBUTTON2] flags:%08x buttons:%08x obuttons:%08x",
 					    action.flags, action.button, action.obutton);
 				}
-				r_vscroll_detect(&action0);
+				r_vscroll_detect(r, &r->scroll, &action0);
 			}
 
 			r_timestamp(&action0, &r->btstate, &r->e3b, &r->drift);
-			r_statetrans(&action0, &action,
+			r_statetrans(r, &action0, &action,
 			    A(action0.button & MOUSE_BUTTON1DOWN,
 			      action0.button & MOUSE_BUTTON3DOWN));
 			debug("flags:%08x buttons:%08x obuttons:%08x", action.flags,
@@ -997,7 +1008,7 @@ moused(void)
 			 * If *only* the middle button is pressed AND we are moving
 			 * the stick/trackpoint/nipple, scroll!
 			 */
-			r_vscroll(&action2);
+			r_vscroll(&r->scroll, &action2);
 		}
 
 		if (r->drift.terminate) {
@@ -1012,7 +1023,7 @@ moused(void)
 
 		/* Defer clicks until we aren't VirtualScroll'ing. */
 		if (r->scroll.state == SCROLL_NOTSCROLLING)
-			r_click(&action2);
+			r_click(&action2, &r->btstate);
 
 		if (action2.flags & MOUSE_POSCHANGED)
 			r_move(&action2, &r->accel);
@@ -1029,7 +1040,7 @@ moused(void)
 			debug("activity : buttons 0x%08x  dx %d  dy %d  dz %d",
 			    action2.button, action2.dx, action2.dy, action2.dz);
 
-			r_click(&action2);
+			r_click(&action2, &r->btstate);
 		}
 	}
 	/* NOT REACHED */
@@ -1425,7 +1436,6 @@ static void
 r_init_touchpad_info(struct quirks *q, struct tpcaps *tphw,
     struct tpinfo *tpinfo)
 {
-	struct accel *accel = &rodent.accel;
 	struct quirk_range r;
 	int i;
 	u_int u;
@@ -1585,8 +1595,8 @@ r_init_scroll(struct scroll *scroll)
 static struct rodent *
 r_init(const char *path)
 {
-	struct rodent *r = &rodent;
-	struct device *dev = &r->dev;
+	struct rodent *r;
+	struct device dev;
 	struct quirks *q;
 	enum device_if iftype;
 	enum device_type type;
@@ -1637,15 +1647,16 @@ r_init(const char *path)
 		return (NULL);
 	}
 
-	dev->path = path;
-	dev->iftype = iftype;
-	dev->type = type;
+	memset(&dev, 0, sizeof(struct device));
+	dev.path = path;
+	dev.iftype = iftype;
+	dev.type = type;
 	switch (iftype) {
 	case DEVICE_IF_EVDEV:
-		err = r_init_dev_evdev(fd, dev);
+		err = r_init_dev_evdev(fd, &dev);
 		break;
 	case DEVICE_IF_SYSMOUSE:
-		err = r_init_dev_sysmouse(fd, dev);
+		err = r_init_dev_sysmouse(fd, &dev);
 		break;
 	default:
 		debug("unsupported interface type: %s on %s",
@@ -1660,7 +1671,7 @@ r_init(const char *path)
 		return (NULL);
 	}
 
-	q = quirks_fetch_for_device(quirks, dev);
+	q = quirks_fetch_for_device(quirks, &dev);
 
 	switch (iftype) {
 	case DEVICE_IF_EVDEV:
@@ -1676,10 +1687,10 @@ r_init(const char *path)
 		if (opt_resolution == MOUSE_RES_UNKNOWN && opt_rate == 0)
 			break;
 		if (opt_resolution != MOUSE_RES_UNKNOWN)
-			dev->mode.resolution = opt_resolution;
+			dev.mode.resolution = opt_resolution;
 		if (opt_resolution != 0)
-			dev->mode.rate = opt_rate;
-		if (ioctl(fd, MOUSE_SETMODE, &dev->mode) < 0)
+			dev.mode.rate = opt_rate;
+		if (ioctl(fd, MOUSE_SETMODE, &dev.mode) < 0)
 			debug("failed to MOUSE_SETMODE for device %s", path);
 		break;
 	default:
@@ -1695,16 +1706,18 @@ r_init(const char *path)
 		return (NULL);
 	}
 
+	r = rodent = calloc(1, sizeof(struct rodent));
+	memcpy(&r->dev, &dev, sizeof(struct device));
 	r->mfd = fd;
 	r_init_buttons(&r->btstate, &r->e3b);
 	r_init_scroll(&r->scroll);
 	r_init_accel(q, &r->accel);
 	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
-		r_init_touchpad_hw(fd, q, &r->tphw);
-		r_init_touchpad_info(q, &r->tphw, &r->tpinfo);
-		r_init_touchpad_accel(&r->tphw, &r->accel);
-		r_init_touchpad_gesture(&r->gest);
+		r_init_touchpad_hw(fd, q, &r->tp.hw);
+		r_init_touchpad_info(q, &r->tp.hw, &r->tp.info);
+		r_init_touchpad_accel(&r->tp.hw, &r->accel);
+		r_init_touchpad_gesture(&r->tp.gest);
 		break;
 
 	case DEVICE_TYPE_MOUSE:
@@ -1712,14 +1725,14 @@ r_init(const char *path)
 		break;
 
 	default:
-//		debug("unsupported evdev type: %s", r_name(rodent.dev.type));
+		debug("unsupported device type: %s", r_name(type));
 		break;
 	}
 
 	quirks_unref(q);
 
 	debug("port: %s  interface: %s  type: %s  model: %s",
-	    path, r_if(iftype), r_name(type), dev->name);
+	    path, r_if(iftype), r_name(type), dev.name);
 
 	return (r);
 }
@@ -1731,14 +1744,15 @@ r_deinit(struct rodent *r)
 		return;
 	if (r->mfd != -1)
 		close(r->mfd);
+	free(r);
 }
 
 static int
-r_protocol_evdev(struct input_event *ie, mousestatus_t *act)
+r_protocol_evdev(enum device_type type, struct tpad *tp, struct evstate *ev,
+    struct input_event *ie, mousestatus_t *act)
 {
-	struct tpcaps *tphw = &rodent.tphw;
-	struct tpinfo *tpinfo = &rodent.tpinfo;
-	struct evstate *ev = &rodent.ev;
+	const struct tpcaps *tphw = &tp->hw;
+	const struct tpinfo *tpinfo = &tp->info;
 
 	static int butmapev[8] = {	/* evdev */
 	    0,
@@ -1888,11 +1902,11 @@ r_protocol_evdev(struct input_event *ie, mousestatus_t *act)
 		}
 	}
 
-	if (rodent.dev.type == DEVICE_TYPE_TOUCHPAD) {
+	if (type == DEVICE_TYPE_TOUCHPAD) {
 		if (debug > 1)
 			debug("absolute data %d,%d,%d,%d", ev->st.x, ev->st.y,
 			    ev->st.p, ev->st.w);
-		switch (r_gestures(ev->st.x, ev->st.y, ev->st.p, ev->st.w,
+		switch (r_gestures(tp, ev->st.x, ev->st.y, ev->st.p, ev->st.w,
 		    ev->nfingers, &ietime, act)) {
 		case GEST_IGNORE:
 			ev->dx = 0;
@@ -1997,9 +2011,8 @@ r_protocol_sysmouse(uint8_t *pBuf, mousestatus_t *act)
 }
 
 static void
-r_vscroll_detect(mousestatus_t *act)
+r_vscroll_detect(struct rodent *r, struct scroll *sc, mousestatus_t *act)
 {
-	struct scroll *sc = &rodent.scroll;
 	mousestatus_t newaction;
 
 	/* Allow middle button drags to scroll up and down */
@@ -2026,21 +2039,20 @@ r_vscroll_detect(mousestatus_t *act)
 		newaction = *act;
 
 		/* We were preparing to scroll, but we never moved... */
-		r_timestamp(act, &rodent.btstate, &rodent.e3b, &rodent.drift);
-		r_statetrans(act, &newaction,
+		r_timestamp(act, &r->btstate, &r->e3b, &r->drift);
+		r_statetrans(r, act, &newaction,
 			     A(newaction.button & MOUSE_BUTTON1DOWN,
 			       act->button & MOUSE_BUTTON3DOWN));
 
 		/* Send middle down */
 		newaction.button = MOUSE_BUTTON2DOWN;
-		r_click(&newaction);
+		r_click(&newaction, &r->btstate);
 
 		/* Send middle up */
-		r_timestamp(&newaction, &rodent.btstate, &rodent.e3b,
-		    &rodent.drift);
+		r_timestamp(&newaction, &r->btstate, &r->e3b, &r->drift);
 		newaction.obutton = newaction.button;
 		newaction.button = act->button;
-		r_click(&newaction);
+		r_click(&newaction, &r->btstate);
 		break;
 	default:
 		break;
@@ -2048,10 +2060,8 @@ r_vscroll_detect(mousestatus_t *act)
 }
 
 static void
-r_vscroll(mousestatus_t *act)
+r_vscroll(struct scroll *sc, mousestatus_t *act)
 {
-	struct scroll *sc = &rodent.scroll;
-
 	switch (sc->state) {
 	case SCROLL_PREPARE:
 		/* Middle button down, waiting for movement threshold */
@@ -2153,9 +2163,9 @@ r_drift (struct drift *drift, mousestatus_t *act)
 }
 
 static int
-r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
+r_statetrans(struct rodent *r, mousestatus_t *a1, mousestatus_t *a2, int trans)
 {
-	struct e3bstate *e3b = &rodent.e3b;
+	struct e3bstate *e3b = &r->e3b;
 	bool changed;
 	int flags;
 
@@ -2205,7 +2215,7 @@ r_statetrans(mousestatus_t *a1, mousestatus_t *a2, int trans)
 	flags |= a2->obutton ^ a2->button;
 	if (flags & MOUSE_BUTTON2DOWN) {
 		a2->flags = flags & MOUSE_BUTTON2DOWN;
-		r_timestamp(a2, &rodent.btstate, e3b, &rodent.drift);
+		r_timestamp(a2, &r->btstate, e3b, &r->drift);
 	}
 	a2->flags = flags;
 
@@ -2464,9 +2474,8 @@ r_move(mousestatus_t *act, struct accel *acc)
 }
 
 static void
-r_click(mousestatus_t *act)
+r_click(mousestatus_t *act, struct btstate *bt)
 {
-	struct btstate *bt = &rodent.btstate;
 	struct mouse_info mouse;
 	int button;
 	int mask;
@@ -2500,12 +2509,12 @@ r_click(mousestatus_t *act)
 }
 
 static enum gesture
-r_gestures(int x0, int y0, int z, int w, int nfingers, struct timespec *time,
-    mousestatus_t *ms)
+r_gestures(struct tpad *tp, int x0, int y0, int z, int w, int nfingers,
+    struct timespec *time, mousestatus_t *ms)
 {
-	struct tpstate *gest = &rodent.gest;
-	struct tpcaps *tphw = &rodent.tphw;
-	struct tpinfo *tpinfo = &rodent.tpinfo;
+	struct tpstate *gest = &tp->gest;
+	const struct tpcaps *tphw = &tp->hw;
+	const struct tpinfo *tpinfo = &tp->info;
 	int tap_timeout = tpinfo->tap_timeout;
 
 	/*
