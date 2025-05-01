@@ -1071,7 +1071,7 @@ usage(void)
 	    "              [-VH [-U threshold]] [-a X[,Y]] [-C threshold] [-m N=M] [-w N]",
 	    "              [-z N] [-t <mousetype>] [-l level] [-3 [-E timeout]]",
 	    "              [-T distance[,time[,after]]] -p <port> [-q config] [-Q quirks]",
-	    "       moused [-d] -i <port|type|model|all> -p <port>");
+	    "       moused [-d] -i <port|if|type|model|all> -p <port>");
 	exit(1);
 }
 
