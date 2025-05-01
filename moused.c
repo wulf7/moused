@@ -398,7 +398,6 @@ struct accel {
 static struct rodent {
 	struct device dev;	/* Device */
 	int mfd;		/* mouse file descriptor */
-	int cfd;		/* /dev/consolectl file descriptor */
 	struct btstate btstate;	/* button status */
 	struct e3bstate e3b;	/* 3 button emulation state */
 	struct drift drift;
@@ -412,7 +411,6 @@ static struct rodent {
 	.dev.path = NULL,
 	.dev.type = DEVICE_TYPE_UNKNOWN,
 	.mfd = -1,
-	.cfd = -1,
 };
 
 /* global variables */
@@ -423,6 +421,7 @@ static bool	background = false;
 static bool	paused = false;
 static bool	grab = false;
 static int	identify = ID_NONE;
+static int	cfd = -1;	/* /dev/consolectl file descriptor */
 static const char *devpath = NULL;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
@@ -676,7 +675,7 @@ main(int argc, char *argv[])
 		usage();
 	}
 
-	if ((rodent.cfd = open("/dev/consolectl", O_RDWR, 0)) == -1)
+	if ((cfd = open("/dev/consolectl", O_RDWR, 0)) == -1)
 		logerr(1, "cannot open /dev/consolectl");
 
 	switch (setjmp(env)) {
@@ -752,8 +751,8 @@ out:
 
 	if (rodent.mfd != -1)
 		close(rodent.mfd);
-	if (rodent.cfd != -1)
-		close(rodent.cfd);
+	if (cfd != -1)
+		close(cfd);
 
 	exit(0);
 }
@@ -2376,7 +2375,7 @@ r_move(mousestatus_t *act, struct accel *acc)
 	mouse.operation = MOUSE_MOTION_EVENT;
 	mouse.u.data.buttons = act->button;
 	if (debug < 2 && !paused)
-		ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
+		ioctl(cfd, CONS_MOUSECTL, &mouse);
 }
 
 static void
@@ -2406,7 +2405,7 @@ r_click(mousestatus_t *act)
 			mouse.operation = MOUSE_BUTTON_EVENT;
 			mouse.u.event.id = button;
 			if (debug < 2 && !paused)
-				ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
+				ioctl(cfd, CONS_MOUSECTL, &mouse);
 			debug("button %d  count %d", i + 1,
 			    mouse.u.event.value);
 		}
