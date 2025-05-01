@@ -475,6 +475,7 @@ static enum device_type	r_identify_sysmouse(int fd);
 static const char *r_if(enum device_if type);
 static const char *r_name(enum device_type type);
 static struct rodent *r_init(const char *path);
+static void	r_deinit(struct rodent *r);
 static int	r_protocol_evdev(struct input_event *ie, mousestatus_t *act);
 static int	r_protocol_sysmouse(uint8_t *pBuf, mousestatus_t *act);
 static void	r_vscroll_detect(mousestatus_t *act);
@@ -725,7 +726,7 @@ main(int argc, char *argv[])
 	switch (setjmp(env)) {
 	case SIGHUP:
 		quirks_context_unref(quirks);
-		close(r->mfd);
+		r_deinit(r);
 		/* FALLTHROUGH */
 	case 0:
 		break;
@@ -793,8 +794,7 @@ main(int argc, char *argv[])
 out:
 	quirks_context_unref(quirks);
 
-	if (r->mfd != -1)
-		close(r->mfd);
+	r_deinit(r);
 	if (cfd != -1)
 		close(cfd);
 
@@ -1726,6 +1726,15 @@ r_init(const char *path)
 	    path, r_if(iftype), r_name(type), dev->name);
 
 	return (r);
+}
+
+static void
+r_deinit(struct rodent *r)
+{
+	if (r == NULL)
+		return;
+	if (r->mfd != -1)
+		close(r->mfd);
 }
 
 static int
