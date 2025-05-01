@@ -407,11 +407,7 @@ static struct rodent {
 	struct tpinfo tpinfo;	/* touchpad gesture parameters */
 	struct tpstate gest;	/* touchpad gesture state */
 	struct evstate ev;	/* event device state */
-} rodent = {
-	.dev.path = NULL,
-	.dev.type = DEVICE_TYPE_UNKNOWN,
-	.mfd = -1,
-};
+} rodent;
 
 /* global variables */
 
