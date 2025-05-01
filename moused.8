@@ -38,7 +38,7 @@
 .Nd pass mouse data to the console driver
 .Sh SYNOPSIS
 .Nm
-.Op Fl acdf
+.Op Fl dfg
 .Op Fl I Ar file
 .Op Fl F Ar rate
 .Op Fl r Ar resolution
@@ -251,6 +251,7 @@ Enable debugging messages.
 Do not become a daemon and instead run as a foreground process.
 Useful for testing and debugging.
 .It Fl g
+Only for evdev interface.
 Become the sole recipient of all incoming input events.
 This prevents other processes from getting input events on the device.
 .It Fl i Ar info

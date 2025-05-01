@@ -419,7 +419,7 @@ static int	debug = 0;
 static bool	nodaemon = false;
 static bool	background = false;
 static bool	paused = false;
-static bool	grab = false;
+static bool	opt_grab = false;
 static int	identify = ID_NONE;
 static int	cfd = -1;	/* /dev/consolectl file descriptor */
 static const char *devpath = NULL;
@@ -553,7 +553,7 @@ main(int argc, char *argv[])
 			break;
 
 		case 'g':
-			grab = true;
+			opt_grab = true;
 			break;
 
 		case 'i':
@@ -1228,11 +1228,6 @@ r_name(enum device_type type)
 static int
 r_init_dev_evdev(int fd, struct device *dev)
 {
-	if (grab && ioctl(fd, EVIOCGRAB, 1) == -1) {
-		logwarnx("unable to grab %s", dev->path);
-		return (errno);
-	}
-
 	if (ioctl(fd, EVIOCGNAME(sizeof(dev->name) - 1), dev->name) < 0) {
 		logwarnx("unable to get device %s name", dev->path);
 		return (errno);
@@ -1598,6 +1593,7 @@ r_init(struct rodent *r, const char *path)
 	enum device_if iftype;
 	enum device_type type;
 	int fd, err;
+	bool grab;
 
 	fd = open(path, O_RDWR | O_NONBLOCK);
 	if (fd == -1) {
@@ -1665,6 +1661,13 @@ r_init(struct rodent *r, const char *path)
 
 	switch (iftype) {
 	case DEVICE_IF_EVDEV:
+		grab = opt_grab;
+		if (!grab)
+			quirks_get_bool(q, MOUSED_GRAB_DEVICE, &grab);
+		if (grab && ioctl(fd, EVIOCGRAB, 1) == -1) {
+			logwarnx("failed to grab %s", path);
+			err = errno;
+		}
 		break;
 	case DEVICE_IF_SYSMOUSE:
 		if (opt_resolution == MOUSE_RES_UNKNOWN && opt_rate == 0)
