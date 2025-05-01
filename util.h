@@ -25,6 +25,9 @@
 
 #pragma once
 
+#include <sys/types.h>
+#include <sys/mouse.h>
+
 #define	versionsort	alphasort
 
 #define LIBINPUT_ATTRIBUTE_PRINTF(_format, _args) \
@@ -73,6 +76,7 @@ struct device {
 	char name[80];
 	char uniq[80];
 	struct input_id id;
+	mousemode_t mode;
 };
 
 struct input_prop {

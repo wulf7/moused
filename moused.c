@@ -429,6 +429,9 @@ static const char *config_file = CONFDIR "/moused.conf";
 static const char *quirks_path = QUIRKSDIR;
 static struct quirks_context *quirks;
 
+static int	opt_rate = 0;
+static int	opt_resolution = MOUSE_RES_UNKNOWN;
+
 static u_int	opt_wmode;
 static int	opt_clickthreshold = -1;
 static bool	opt_e3b_enabled = false;
@@ -499,8 +502,7 @@ main(int argc, char *argv[])
 	u_long ul;
 	char *errstr;
 
-	while ((c = getopt(argc, argv, "3A:C:E:HI:L:T:VU:a:dfghi:m:p:q:w:z:"))
-	    != -1) {
+	while ((c = getopt(argc, argv, "3A:C:E:F:HI:L:T:VU:a:dfghi:l:m:p:r:t:q:w:z:")) != -1) {
 		switch(c) {
 
 		case '3':
@@ -572,6 +574,12 @@ main(int argc, char *argv[])
 			nodaemon = true;
 			break;
 
+		case 'l':
+			ul = strtoul(optarg, NULL, 10);
+			if (ul != 1)
+				warnx("ignore mouse level `%s'", optarg);
+			break;
+
 		case 'm':
 			if (!r_installmap(optarg, &opt_btstate)) {
 				warnx("invalid argument `%s'", optarg);
@@ -581,6 +589,32 @@ main(int argc, char *argv[])
 
 		case 'p':
 			devpath = optarg;
+			break;
+
+		case 'r':
+			if (strcmp(optarg, "high") == 0)
+				opt_resolution = MOUSE_RES_HIGH;
+			else if (strcmp(optarg, "medium-high") == 0)
+				opt_resolution = MOUSE_RES_HIGH;
+			else if (strcmp(optarg, "medium-low") == 0)
+				opt_resolution = MOUSE_RES_MEDIUMLOW;
+			else if (strcmp(optarg, "low") == 0)
+				opt_resolution = MOUSE_RES_LOW;
+			else if (strcmp(optarg, "default") == 0)
+				opt_resolution = MOUSE_RES_DEFAULT;
+			else {
+				ul= strtoul(optarg, NULL, 10);
+				if (ul == 0) {
+					warnx("invalid argument `%s'", optarg);
+					usage();
+				}
+				opt_resolution = ul;
+			}
+			break;
+
+		case 't':
+			if (strcmp(optarg, "auto") != 0)
+				warnx("ignore mouse type `%s'", optarg);
 			break;
 
 		case 'w':
@@ -609,6 +643,15 @@ main(int argc, char *argv[])
 				usage();
 			}
 			opt_clickthreshold = ul;
+			break;
+
+		case 'F':
+			ul = strtoul(optarg, NULL, 10);
+			if (ul == 0) {
+				warnx("invalid argument `%s'", optarg);
+				usage();
+			}
+			opt_rate = ul;
 			break;
 
 		case 'H':
@@ -1016,9 +1059,9 @@ static void
 usage(void)
 {
 	fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n",
-	    "usage: moused [-dfg] [-I file]",
+	    "usage: moused [-dfg] [-I file] [-F rate] [-r resolution]",
 	    "              [-VH [-U threshold]] [-a X[,Y]] [-C threshold] [-m N=M] [-w N]",
-	    "              [-z N] [-3 [-E timeout]]",
+	    "              [-z N] [-t <mousetype>] [-l level] [-3 [-E timeout]]",
 	    "              [-T distance[,time[,after]]] -p <port> [-q config] [-Q quirks]",
 	    "       moused [-d] -i <port|type|model|all> -p <port>");
 	exit(1);
@@ -1210,7 +1253,7 @@ r_init_dev_evdev(int fd, struct device *dev)
 static int
 r_init_dev_sysmouse(int fd, struct device *dev)
 {
-	mousemode_t mode;
+	mousemode_t *mode = &dev->mode;
 	int level;
 
 	level = 1;
@@ -1226,17 +1269,17 @@ r_init_dev_sysmouse(int fd, struct device *dev)
 		logwarnx("unable to set level to 1 for device %s", dev->path);
 		return (ENOTSUP);
 	}
-	memset(&mode, 0, sizeof(mode));
-	if (ioctl(fd, MOUSE_GETMODE, &mode) < 0) {
+	memset(mode, 0, sizeof(*mode));
+	if (ioctl(fd, MOUSE_GETMODE, mode) < 0) {
 		logwarnx("unable to MOUSE_GETMODE for device %s", dev->path);
 		return (errno);
 	}
-	if (mode.protocol != MOUSE_PROTO_SYSMOUSE) {
+	if (mode->protocol != MOUSE_PROTO_SYSMOUSE) {
 		logwarnx("unable to set sysmouse protocol for device %s",
 		    dev->path);
 		return (ENOTSUP);
 	}
-	if (mode.packetsize != MOUSE_SYS_PACKETSIZE) {
+	if (mode->packetsize != MOUSE_SYS_PACKETSIZE) {
 		logwarnx("unable to set sysmouse packet size for device %s",
 		    dev->path);
 		return (ENOTSUP);
@@ -1619,6 +1662,31 @@ r_init(struct rodent *r, const char *path)
 	}
 
 	q = quirks_fetch_for_device(quirks, dev);
+
+	switch (iftype) {
+	case DEVICE_IF_EVDEV:
+		break;
+	case DEVICE_IF_SYSMOUSE:
+		if (opt_resolution == MOUSE_RES_UNKNOWN && opt_rate == 0)
+			break;
+		if (opt_resolution != MOUSE_RES_UNKNOWN)
+			dev->mode.resolution = opt_resolution;
+		if (opt_resolution != 0)
+			dev->mode.rate = opt_rate;
+		if (ioctl(fd, MOUSE_SETMODE, &dev->mode) < 0)
+			debug("failed to MOUSE_SETMODE for device %s", path);
+		break;
+	default:
+		debug("unsupported interface type: %s on %s",
+		    r_if(iftype), path);
+		err = ENXIO;
+	}
+	if (err != 0) {
+		debug("failed to initialize device: %s %s on %s",
+		    r_if(iftype), r_name(type), path);
+		close(fd);
+		return (-err);
+	}
 
 	r_init_buttons(&r->btstate, &r->e3b);
 	r_init_scroll(&r->scroll);

@@ -40,6 +40,8 @@
 .Nm
 .Op Fl acdf
 .Op Fl I Ar file
+.Op Fl F Ar rate
+.Op Fl r Ar resolution
 .Op Fl VH Op Fl U Ar distance Fl L Ar distance
 .Op Fl A Ar exp Ns Op , Ns Ar offset
 .Op Fl a Ar X Ns Op , Ns Ar Y
@@ -47,6 +49,8 @@
 .Op Fl m Ar N=M
 .Op Fl w Ar N
 .Op Fl z Ar target
+.Op Fl t Ar mousetype
+.Op Fl l Ar level
 .Op Fl 3 Op Fl E Ar timeout
 .Op Fl T Ar distance Ns Op , Ns Ar time Ns Op , Ns Ar after
 .Fl p Ar port
@@ -123,6 +127,9 @@ utility waits
 msec at most before deciding whether two buttons are being pressed
 simultaneously.
 The default timeout is 100 msec.
+.It Fl F Ar rate
+Only for sysmouse interface.
+Set the report rate (reports/sec) of the device if supported.
 .It Fl L Ar distance
 When
 .Dq Virtual Scrolling
@@ -282,6 +289,10 @@ utility cannot determine the requested information, it prints
 .Dq Li unknown
 or
 .Dq Li generic .
+.It Fl l Ar level
+Ignored.
+Used for compatibiliy with legacy
+.Nm .
 .It Fl m Ar N=M
 Assign the physical button
 .Ar M
@@ -298,6 +309,19 @@ Do not put space around
 Use
 .Ar port
 to communicate with the mouse.
+.It Fl r Ar resolution
+Only for sysmouse interface.
+Set the resolution of the device; in Dots Per Inch, or
+.Ar low ,
+.Ar medium-low ,
+.Ar medium-high
+or
+.Ar high .
+This option may not be supported by all the device.
+.It Fl t Ar type
+Ignored.
+Used for compatibiliy with legacy
+.Nm .
 .It Fl q Ar config
 Path to configuration file.
 .It Fl Q Ar quirks
