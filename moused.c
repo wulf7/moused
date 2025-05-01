@@ -474,7 +474,7 @@ static enum device_type	r_identify_evdev(int fd);
 static enum device_type	r_identify_sysmouse(int fd);
 static const char *r_if(enum device_if type);
 static const char *r_name(enum device_type type);
-static int	r_init(struct rodent *r, const char *path);
+static struct rodent *r_init(const char *path);
 static int	r_protocol_evdev(struct input_event *ie, mousestatus_t *act);
 static int	r_protocol_sysmouse(uint8_t *pBuf, mousestatus_t *act);
 static void	r_vscroll_detect(mousestatus_t *act);
@@ -496,6 +496,7 @@ static enum gesture r_gestures(int x0, int y0, int z, int w, int nfingers,
 int
 main(int argc, char *argv[])
 {
+	struct rodent *r;
 	pid_t mpid;
 	int c;
 	int	i;
@@ -724,7 +725,7 @@ main(int argc, char *argv[])
 	switch (setjmp(env)) {
 	case SIGHUP:
 		quirks_context_unref(quirks);
-		close(rodent.mfd);
+		close(r->mfd);
 		/* FALLTHROUGH */
 	case 0:
 		break;
@@ -749,23 +750,23 @@ main(int argc, char *argv[])
 	if (quirks == NULL)
 		logwarnx("cannot open configuration file %s", config_file);
 
-	if ((rodent.mfd = r_init(&rodent, devpath)) < 0)
+	if ((r = r_init(devpath)) == NULL)
 		logerrx(1, "Can not initialize device");
 
 	/* print some information */
 	if (identify != ID_NONE) {
 		if (identify == ID_ALL)
 			printf("%s %s %s %s\n",
-			    rodent.dev.path, r_if(rodent.dev.iftype),
-			    r_name(rodent.dev.type), rodent.dev.name);
+			    r->dev.path, r_if(r->dev.iftype),
+			    r_name(r->dev.type), r->dev.name);
 		else if (identify & ID_PORT)
-			printf("%s\n", rodent.dev.path);
+			printf("%s\n", r->dev.path);
 		else if (identify & ID_IF)
-			printf("%s\n", r_if(rodent.dev.iftype));
+			printf("%s\n", r_if(r->dev.iftype));
 		else if (identify & ID_TYPE)
-			printf("%s\n", r_name(rodent.dev.type));
+			printf("%s\n", r_name(r->dev.type));
 		else if (identify & ID_MODEL)
-			printf("%s\n", rodent.dev.name);
+			printf("%s\n", r->dev.name);
 		exit(0);
 	}
 
@@ -792,8 +793,8 @@ main(int argc, char *argv[])
 out:
 	quirks_context_unref(quirks);
 
-	if (rodent.mfd != -1)
-		close(rodent.mfd);
+	if (r->mfd != -1)
+		close(r->mfd);
 	if (cfd != -1)
 		close(cfd);
 
@@ -1585,9 +1586,10 @@ r_init_scroll(struct scroll *scroll)
 		scroll->threshold = opt_scroll_threshold;
 }
 
-static int
-r_init(struct rodent *r, const char *path)
+static struct rodent *
+r_init(const char *path)
 {
+	struct rodent *r = &rodent;
 	struct device *dev = &r->dev;
 	struct quirks *q;
 	enum device_if iftype;
@@ -1598,7 +1600,7 @@ r_init(struct rodent *r, const char *path)
 	fd = open(path, O_RDWR | O_NONBLOCK);
 	if (fd == -1) {
 		logwarnx("unable to open %s", path);
-		return (-errno);
+		return (NULL);
 	}
 
 	iftype =  r_identify_if(fd);
@@ -1606,7 +1608,8 @@ r_init(struct rodent *r, const char *path)
 	case DEVICE_IF_UNKNOWN:
 		debug("cannot determine interface type on %s", path);
 		close(fd);
-		return (-ENOTSUP);
+		errno = ENOTSUP;
+		return (NULL);
 	case DEVICE_IF_EVDEV:
 		type = r_identify_evdev(fd);
 		break;
@@ -1617,14 +1620,16 @@ r_init(struct rodent *r, const char *path)
 		debug("unsupported interface type: %s on %s",
 		    r_if(iftype), path);
 		close(fd);
-		return (-ENXIO);
+		errno = ENXIO;
+		return (NULL);
 	}
 
 	switch (type) {
 	case DEVICE_TYPE_UNKNOWN:
 		debug("cannot determine device type on %s", path);
 		close(fd);
-		return (-ENOTSUP);
+		errno = ENOTSUP;
+		return (NULL);
 	case DEVICE_TYPE_MOUSE:
 	case DEVICE_TYPE_TOUCHPAD:
 		break;
@@ -1632,7 +1637,8 @@ r_init(struct rodent *r, const char *path)
 		debug("unsupported device type: %s on %s",
 		    r_name(type), path);
 		close(fd);
-		return (-ENXIO);
+		errno = ENXIO;
+		return (NULL);
 	}
 
 	dev->path = path;
@@ -1654,7 +1660,8 @@ r_init(struct rodent *r, const char *path)
 		debug("failed to initialize device: %s %s on %s",
 		    r_if(iftype), r_name(type), path);
 		close(fd);
-		return (-err);
+		errno = err;
+		return (NULL);
 	}
 
 	q = quirks_fetch_for_device(quirks, dev);
@@ -1688,9 +1695,11 @@ r_init(struct rodent *r, const char *path)
 		debug("failed to initialize device: %s %s on %s",
 		    r_if(iftype), r_name(type), path);
 		close(fd);
-		return (-err);
+		errno = err;
+		return (NULL);
 	}
 
+	r->mfd = fd;
 	r_init_buttons(&r->btstate, &r->e3b);
 	r_init_scroll(&r->scroll);
 	r_init_accel(q, &r->accel);
@@ -1716,7 +1725,7 @@ r_init(struct rodent *r, const char *path)
 	debug("port: %s  interface: %s  type: %s  model: %s",
 	    path, r_if(iftype), r_name(type), dev->name);
 
-	return (fd);
+	return (r);
 }
 
 static int
