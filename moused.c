@@ -922,11 +922,15 @@ moused(void)
 				r->tp.gest.idletimeout -= timeout;
 		}
 
-		c = poll(&fds, 1, timeout);
-		if (c < 0) {                    /* error */
-			logwarn("failed to read from mouse");
-			continue;
-		} else if (c == 0 && timeout_em3b) {	/* timeout */
+		if (timeout != 0) {
+			c = poll(&fds, 1, timeout);
+			if (c < 0) {                    /* error */
+				logwarn("failed to read from mouse");
+				continue;
+			}
+		} else
+			c = 0;
+		if (c == 0 && timeout_em3b) {	/* timeout */
 			/* assert(rodent.flags & Emulate3Button) */
 			action0.button = action0.obutton;
 			action0.dx = action0.dy = action0.dz = 0;
