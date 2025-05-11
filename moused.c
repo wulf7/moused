@@ -411,11 +411,12 @@ struct rodent {
 	struct scroll scroll;	/* virtual scroll state */
 	struct tpad tp;		/* touchpad info and gesture state */
 	struct evstate ev;	/* event device state */
+	SLIST_ENTRY(rodent) next;
 };
 
 /* global variables */
 
-static struct rodent *rodent;
+static SLIST_HEAD(rodent_list, rodent) rodents = SLIST_HEAD_INITIALIZER();
 
 static int	debug = 0;
 static bool	nodaemon = false;
@@ -479,6 +480,7 @@ static const char *r_if(enum device_if type);
 static const char *r_name(enum device_type type);
 static struct rodent *r_init(const char *path);
 static void	r_deinit(struct rodent *r);
+static void	r_deinit_all(void);
 static int	r_protocol_evdev(enum device_type type, struct tpad *tp,
 		    struct evstate *ev, struct input_event *ie,
 		    mousestatus_t *act);
@@ -735,7 +737,7 @@ main(int argc, char *argv[])
 	switch (setjmp(env)) {
 	case SIGHUP:
 		quirks_context_unref(quirks);
-		r_deinit(r);
+		r_deinit_all();
 		/* FALLTHROUGH */
 	case 0:
 		break;
@@ -803,7 +805,7 @@ main(int argc, char *argv[])
 out:
 	quirks_context_unref(quirks);
 
-	r_deinit(r);
+	r_deinit_all();
 	if (kfd != -1)
 		close(kfd);
 	if (cfd != -1)
@@ -885,7 +887,7 @@ expoacc(struct accel *acc, int dx, int dy, int dz,
 static void
 moused(void)
 {
-	struct rodent *r = rodent;
+	struct rodent *r = SLIST_FIRST(&rodents);
 	mousestatus_t action0;		/* original mouse action */
 	mousestatus_t action;		/* interim buffer */
 	mousestatus_t action2;		/* mapped action */
@@ -1719,7 +1721,7 @@ r_init(const char *path)
 		return (NULL);
 	}
 
-	r = rodent = calloc(1, sizeof(struct rodent));
+	r = calloc(1, sizeof(struct rodent));
 	memcpy(&r->dev, &dev, sizeof(struct device));
 	r->mfd = fd;
 
@@ -1754,6 +1756,8 @@ r_init(const char *path)
 
 	quirks_unref(q);
 
+	SLIST_INSERT_HEAD(&rodents, r, next);
+
 	debug("port: %s  interface: %s  type: %s  model: %s",
 	    path, r_if(iftype), r_name(type), dev.name);
 
@@ -1775,7 +1779,16 @@ r_deinit(struct rodent *r)
 		kevent(kfd, ke, nitems(ke), NULL, 0, NULL);
 		close(r->mfd);
 	}
+	SLIST_REMOVE(&rodents, r, rodent, next);
+	debug("destroy device: port: %s  model: %s", r->dev.path, r->dev.name);
 	free(r);
+}
+
+static void
+r_deinit_all(void)
+{
+	while (!SLIST_EMPTY(&rodents))
+		r_deinit(SLIST_FIRST(&rodents));
 }
 
 static int
