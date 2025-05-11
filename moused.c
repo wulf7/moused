@@ -890,8 +890,8 @@ moused(void)
 	mousestatus_t action;		/* interim buffer */
 	mousestatus_t action2;		/* mapped action */
 	int timeout;
-	bool timeout_em3b;
-	struct kevent ke;
+	struct kevent ke[2];
+	int nchanges;
 	union {
 		struct input_event ie;
 		uint8_t se[MOUSE_SYS_PACKETSIZE];
@@ -910,30 +910,31 @@ moused(void)
 	for (;;) {
 
 		b_size = rifs[r->dev.iftype].p_size;
-		timeout = -1;
+		timeout = r->tp.gest.idletimeout;
+		nchanges = 0;
 		if (r->e3b.enabled &&
 		    S_DELAYED(r->e3b.mouse_button_state)) {
-			timeout = 20;
-			timeout_em3b = true;
+			EV_SET(ke + nchanges, r->mfd << 1, EVFILT_TIMER,
+			    EV_ADD | EV_ENABLE | EV_DISPATCH, 0, 20, r);
+			nchanges++;
 		}
-		if (r->tp.gest.idletimeout != -1) {
-			if (timeout == -1 || r->tp.gest.idletimeout < timeout) {
-				timeout = r->tp.gest.idletimeout;
-				timeout_em3b = false;
-			} else
-				r->tp.gest.idletimeout -= timeout;
+		if (timeout > 0) {
+			EV_SET(ke + nchanges, r->mfd << 1 | 1, EVFILT_TIMER,
+			    EV_ADD | EV_ENABLE | EV_DISPATCH, 0, timeout, r);
+			nchanges++;
 		}
 
 		if (timeout != 0) {
-			struct timespec to = msec2ts(timeout);
-			c = kevent(kfd, NULL, 0, &ke, 1, timeout == -1 ? NULL : &to);
+			c = kevent(kfd, ke, nchanges, ke, 1, NULL);
 			if (c < 0) {                    /* error */
 				logwarn("failed to read from mouse");
 				continue;
 			}
 		} else
 			c = 0;
-		if (c == 0 && timeout_em3b) {	/* timeout */
+		/* E3B timeout */
+		if (c > 0 && ke[0].filter == EVFILT_TIMER &&
+		    (ke[0].ident & 1) == 0) {
 			/* assert(rodent.flags & Emulate3Button) */
 			action0.button = action0.obutton;
 			action0.dx = action0.dy = action0.dz = 0;
@@ -949,9 +950,7 @@ moused(void)
 			}
 		} else {
 			/* mouse movement */
-			if (c > 0) {
-				if (ke.filter != EVFILT_READ)
-					return;
+			if (c > 0 && ke[0].filter == EVFILT_READ) {
 				r_size = read(r->mfd, &b, b_size);
 				if (r_size == -1) {
 					if (errno == EWOULDBLOCK)
@@ -964,6 +963,11 @@ moused(void)
 					    "%zd bytes", r_size);
 					continue;
 				}
+				EV_SET(ke, r->mfd << 1, EVFILT_TIMER,
+				    EV_DISABLE, 0, 0, r);
+				EV_SET(ke + 1, r->mfd << 1 | 1, EVFILT_TIMER,
+				    EV_DISABLE, 0, 0, r);
+				kevent(kfd, ke, 2, NULL, 0, NULL);
 			} else {
 				b.ie.time.tv_sec = timeout == 0 ? 0 : LONG_MAX;
 				b.ie.time.tv_usec = 0;
@@ -1758,10 +1762,18 @@ r_init(const char *path)
 static void
 r_deinit(struct rodent *r)
 {
+	struct kevent ke[3];
+
 	if (r == NULL)
 		return;
-	if (r->mfd != -1)
+	if (r->mfd != -1) {
+		EV_SET(ke, r->mfd, EVFILT_READ, EV_DELETE, 0, 0, r);
+		EV_SET(ke + 1, r->mfd << 1, EVFILT_TIMER, EV_DELETE, 0, 0, r);
+		EV_SET(ke + 2, r->mfd << 1 | 1,
+		    EVFILT_TIMER, EV_DELETE, 0, 0, r);
+		kevent(kfd, ke, nitems(ke), NULL, 0, NULL);
 		close(r->mfd);
+	}
 	free(r);
 }
 
