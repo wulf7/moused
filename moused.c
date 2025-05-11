@@ -46,9 +46,11 @@
 #include <dev/evdev/input.h>
 
 #include <ctype.h>
+#include <dirent.h>
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <fnmatch.h>
 #include <libutil.h>
 #include <math.h>
 #include <setjmp.h>
@@ -479,6 +481,7 @@ static enum device_type	r_identify_sysmouse(int fd);
 static const char *r_if(enum device_if type);
 static const char *r_name(enum device_type type);
 static struct rodent *r_init(const char *path);
+static void	r_init_all(void);
 static void	r_deinit(struct rodent *r);
 static void	r_deinit_all(void);
 static int	r_protocol_evdev(enum device_type type, struct tpad *tp,
@@ -724,11 +727,6 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (devpath == NULL) {
-		warnx("no port name specified");
-		usage();
-	}
-
 	if ((cfd = open("/dev/consolectl", O_RDWR, 0)) == -1)
 		logerr(1, "cannot open /dev/consolectl");
 	if ((kfd = kqueue()) == -1)
@@ -762,11 +760,17 @@ main(int argc, char *argv[])
 	if (quirks == NULL)
 		logwarnx("cannot open configuration file %s", config_file);
 
-	if ((r = r_init(devpath)) == NULL)
-		logerrx(1, "Can not initialize device");
+	if (devpath == NULL) {
+		r_init_all();
+		if (SLIST_EMPTY(&rodents))
+			logerrx(1, "No devices found");
+	} else {
+		if ((r = r_init(devpath)) == NULL)
+			logerrx(1, "Can not initialize device");
+	}
 
 	/* print some information */
-	if (identify != ID_NONE) {
+	if (identify != ID_NONE && devpath != NULL) {
 		if (identify == ID_ALL)
 			printf("%s %s %s %s\n",
 			    r->dev.path, r_if(r->dev.iftype),
@@ -1762,6 +1766,28 @@ r_init(const char *path)
 	SLIST_INSERT_HEAD(&rodents, r, next);
 
 	return (r);
+}
+
+static void
+r_init_all(void)
+{
+	char path[22] = "/dev/input/";
+	DIR *dirp;
+	struct dirent *dp;
+
+	dirp = opendir("/dev/input");
+	if (dirp == NULL)
+		logerr(1, "Failed to open /dev/input");
+
+	while ((dp = readdir(dirp)) != NULL) {
+		if (fnmatch("event[0-9]*", dp->d_name, 0) == 0) {
+			strncpy(path + 11, dp->d_name, 10);
+			(void)r_init(path);
+		}
+	}
+	(void)closedir(dirp);
+
+	return;
 }
 
 static void
