@@ -39,6 +39,7 @@
 #include <sys/param.h>
 #include <sys/bitstring.h>
 #include <sys/consio.h>
+#include <sys/event.h>
 #include <sys/mouse.h>
 #include <sys/time.h>
 
@@ -50,7 +51,6 @@
 #include <fcntl.h>
 #include <libutil.h>
 #include <math.h>
-#include <poll.h>
 #include <setjmp.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -424,6 +424,7 @@ static bool	paused = false;
 static bool	opt_grab = false;
 static int	identify = ID_NONE;
 static int	cfd = -1;	/* /dev/consolectl file descriptor */
+static int	kfd = -1;	/* kqueue file descriptor */
 static const char *devpath = NULL;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
@@ -728,6 +729,8 @@ main(int argc, char *argv[])
 
 	if ((cfd = open("/dev/consolectl", O_RDWR, 0)) == -1)
 		logerr(1, "cannot open /dev/consolectl");
+	if ((kfd = kqueue()) == -1)
+		logerr(1, "cannot create kqueue");
 
 	switch (setjmp(env)) {
 	case SIGHUP:
@@ -801,6 +804,8 @@ out:
 	quirks_context_unref(quirks);
 
 	r_deinit(r);
+	if (kfd != -1)
+		close(kfd);
 	if (cfd != -1)
 		close(cfd);
 
@@ -886,7 +891,7 @@ moused(void)
 	mousestatus_t action2;		/* mapped action */
 	int timeout;
 	bool timeout_em3b;
-	struct pollfd fds;
+	struct kevent ke;
 	union {
 		struct input_event ie;
 		uint8_t se[MOUSE_SYS_PACKETSIZE];
@@ -905,9 +910,6 @@ moused(void)
 	for (;;) {
 
 		b_size = rifs[r->dev.iftype].p_size;
-		fds.fd = r->mfd;
-		fds.events = POLLIN;
-		fds.revents = 0;
 		timeout = -1;
 		if (r->e3b.enabled &&
 		    S_DELAYED(r->e3b.mouse_button_state)) {
@@ -923,7 +925,8 @@ moused(void)
 		}
 
 		if (timeout != 0) {
-			c = poll(&fds, 1, timeout);
+			struct timespec to = msec2ts(timeout);
+			c = kevent(kfd, NULL, 0, &ke, 1, timeout == -1 ? NULL : &to);
 			if (c < 0) {                    /* error */
 				logwarn("failed to read from mouse");
 				continue;
@@ -947,7 +950,7 @@ moused(void)
 		} else {
 			/* mouse movement */
 			if (c > 0) {
-				if ((fds.revents & POLLIN) == 0)
+				if (ke.filter != EVFILT_READ)
 					return;
 				r_size = read(r->mfd, &b, b_size);
 				if (r_size == -1) {
@@ -1602,6 +1605,7 @@ r_init(const char *path)
 	struct rodent *r;
 	struct device dev;
 	struct quirks *q;
+	struct kevent kev;
 	enum device_if iftype;
 	enum device_type type;
 	int fd, err;
@@ -1713,6 +1717,16 @@ r_init(const char *path)
 	r = rodent = calloc(1, sizeof(struct rodent));
 	memcpy(&r->dev, &dev, sizeof(struct device));
 	r->mfd = fd;
+
+	EV_SET(&kev, fd, EVFILT_READ, EV_ADD, 0, 0, r);
+	err = kevent(kfd, &kev, 1, NULL, 0, NULL);
+	if (err == -1) {
+		logwarnx("failed to register kevent on %s", path);
+		close(fd);
+		free(r);
+		return (NULL);
+	}
+
 	r_init_buttons(&r->btstate, &r->e3b);
 	r_init_scroll(&r->scroll);
 	r_init_accel(q, &r->accel);
