@@ -926,10 +926,11 @@ moused(void)
 
 		if (timeout != 0) {
 			c = kevent(kfd, ke, nchanges, ke, 1, NULL);
-			if (c < 0) {                    /* error */
+			if (c <= 0) {			/* error */
 				logwarn("failed to read from mouse");
 				continue;
 			}
+			r = ke[0].udata;
 		} else
 			c = 0;
 		/* E3B timeout */
