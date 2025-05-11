@@ -1686,6 +1686,9 @@ r_init(const char *path)
 		return (NULL);
 	}
 
+	debug("port: %s  interface: %s  type: %s  model: %s",
+	    path, r_if(iftype), r_name(type), dev.name);
+
 	q = quirks_fetch_for_device(quirks, &dev);
 
 	switch (iftype) {
@@ -1757,9 +1760,6 @@ r_init(const char *path)
 	quirks_unref(q);
 
 	SLIST_INSERT_HEAD(&rodents, r, next);
-
-	debug("port: %s  interface: %s  type: %s  model: %s",
-	    path, r_if(iftype), r_name(type), dev.name);
 
 	return (r);
 }
