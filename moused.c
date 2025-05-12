@@ -41,7 +41,9 @@
 #include <sys/consio.h>
 #include <sys/event.h>
 #include <sys/mouse.h>
+#include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/un.h>
 
 #include <dev/evdev/input.h>
 
@@ -428,6 +430,7 @@ static bool	opt_grab = false;
 static int	identify = ID_NONE;
 static int	cfd = -1;	/* /dev/consolectl file descriptor */
 static int	kfd = -1;	/* kqueue file descriptor */
+static int	dfd = -1;	/* devd socket descriptor */
 static const char *devpath = NULL;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
@@ -471,6 +474,8 @@ static void	expoacc(struct accel *, int, int, int, int*, int*, int*);
 static void	moused(void);
 static void	reset(int sig);
 static void	pause_mouse(int sig);
+static int	connect_devd(void);
+static void	fetch_and_parse_devd(void);
 static void	usage(void);
 static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 		    __printflike(3, 4);
@@ -731,6 +736,8 @@ main(int argc, char *argv[])
 		logerr(1, "cannot open /dev/consolectl");
 	if ((kfd = kqueue()) == -1)
 		logerr(1, "cannot create kqueue");
+	if (devpath == NULL && (dfd = connect_devd()) == -1)
+		logwarnx("cannot open devd socket");
 
 	switch (setjmp(env)) {
 	case SIGHUP:
@@ -810,6 +817,8 @@ out:
 	quirks_context_unref(quirks);
 
 	r_deinit_all();
+	if (dfd != -1)
+		close(dfd);
 	if (kfd != -1)
 		close(kfd);
 	if (cfd != -1)
@@ -915,6 +924,8 @@ moused(void)
 	/* process mouse data */
 	for (;;) {
 
+		if (dfd == -1 && devpath == NULL)
+			dfd = connect_devd();
 		b_size = rifs[r->dev.iftype].p_size;
 		timeout = r->tp.gest.idletimeout;
 		nchanges = 0;
@@ -929,6 +940,11 @@ moused(void)
 			    EV_ADD | EV_ENABLE | EV_DISPATCH, 0, timeout, r);
 			nchanges++;
 		}
+		if (dfd == -1 && nchanges == 0 && devpath == NULL) {
+			EV_SET(ke + nchanges, UINTPTR_MAX, EVFILT_TIMER,
+			    EV_ADD | EV_ENABLE | EV_ONESHOT, 0, 1000, NULL);
+			nchanges++;
+		}
 
 		if (timeout != 0) {
 			c = kevent(kfd, ke, nchanges, ke, 1, NULL);
@@ -936,9 +952,24 @@ moused(void)
 				logwarn("failed to read from mouse");
 				continue;
 			}
-			r = ke[0].udata;
 		} else
 			c = 0;
+		/* Devd event */
+		if (c > 0 && ke[0].udata == NULL) {
+			if (ke[0].filter == EVFILT_READ) {
+				if ((ke[0].flags & EV_EOF) != 0) {
+					logwarn("devd connection is closed");
+					close(dfd);
+					dfd = -1;
+				} else
+					fetch_and_parse_devd();
+			} else if (ke[0].filter == EVFILT_TIMER) {
+				/* DO NOTHING */
+			}
+			continue;
+		}
+		if (c > 0)
+			r = ke[0].udata;
 		/* E3B timeout */
 		if (c > 0 && ke[0].filter == EVFILT_TIMER &&
 		    (ke[0].ident & 1) == 0) {
@@ -1081,6 +1112,67 @@ static void
 pause_mouse(__unused int sig)
 {
 	paused = !paused;
+}
+
+static int
+connect_devd(void)
+{
+	const static struct sockaddr_un sa = {
+		.sun_family = AF_UNIX,
+		.sun_path = "/var/run/devd.seqpacket.pipe",
+	};
+	struct kevent kev;
+	int fd;
+
+	fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
+	if (fd < 0)
+		return (-1);
+	if (connect(fd, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
+		close(fd);
+		return (-1);
+	}
+	EV_SET(&kev, fd, EVFILT_READ, EV_ADD, 0, 0, 0);
+	if (kevent(kfd, &kev, 1, NULL, 0, NULL) < 0) {
+		close(fd);
+		return (-1);
+	}
+
+	return (fd);
+}
+
+static void
+fetch_and_parse_devd(void)
+{
+	char ev[1024];
+	char path[22] = "/dev/";
+	char *cdev, *cr;
+	ssize_t len;
+
+	if ((len = recv(dfd, ev, sizeof(ev), MSG_WAITALL)) <= 0) {
+		close(dfd);
+		dfd = -1;
+		return;
+	}
+
+	if (ev[0] != '!')
+		return;
+	if (strnstr(ev, "system=DEVFS", len) == NULL)
+		return;
+	if (strnstr(ev, "subsystem=CDEV", len) == NULL)
+		return;
+	if (strnstr(ev, "type=CREATE", len) == NULL)
+		return;
+	if ((cdev = strnstr(ev, "cdev=input/event", len)) == NULL)
+		return;
+	cr = strchr(cdev, '\n');
+	if (cr != NULL)
+		*cr = '\0';
+	cr = strchr(cdev, ' ');
+	if (cr != NULL)
+		*cr = '\0';
+	strncpy(path + 5, cdev + 5, 17);
+	(void)r_init(path);
+	return;
 }
 
 /*
