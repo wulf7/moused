@@ -775,19 +775,21 @@ main(int argc, char *argv[])
 	}
 
 	/* print some information */
-	if (identify != ID_NONE && devpath != NULL) {
-		if (identify == ID_ALL)
-			printf("%s %s %s %s\n",
-			    r->dev.path, r_if(r->dev.iftype),
-			    r_name(r->dev.type), r->dev.name);
-		else if (identify & ID_PORT)
-			printf("%s\n", r->dev.path);
-		else if (identify & ID_IF)
-			printf("%s\n", r_if(r->dev.iftype));
-		else if (identify & ID_TYPE)
-			printf("%s\n", r_name(r->dev.type));
-		else if (identify & ID_MODEL)
-			printf("%s\n", r->dev.name);
+	if (identify != ID_NONE) {
+		SLIST_FOREACH(r, &rodents, next) {
+			if (identify == ID_ALL)
+				printf("%s %s %s %s\n",
+				    r->dev.path, r_if(r->dev.iftype),
+				    r_name(r->dev.type), r->dev.name);
+			else if (identify & ID_PORT)
+				printf("%s\n", r->dev.path);
+			else if (identify & ID_IF)
+				printf("%s\n", r_if(r->dev.iftype));
+			else if (identify & ID_TYPE)
+				printf("%s\n", r_name(r->dev.type));
+			else if (identify & ID_MODEL)
+				printf("%s\n", r->dev.name);
+		}
 		exit(0);
 	}
 
