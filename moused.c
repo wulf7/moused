@@ -294,7 +294,7 @@ struct button_state {
 
 struct btstate {
 	u_int	wmode;		/* wheel mode button number */
-	int 	clickthreshold;	/* double click speed in msec */
+	u_int 	clickthreshold;	/* double click speed in msec */
 	struct button_state	bstate[MOUSE_MAXBUTTON]; /* button state */
 	struct button_state	*mstate[MOUSE_MAXBUTTON];/* mapped button st.*/
 	u_int	p2l[MOUSE_MAXBUTTON];/* phisical to logical button mapping */
@@ -351,7 +351,7 @@ static const struct {
 
 struct e3bstate {
 	bool enabled;
-	long button2timeout;	/* 3 button emulation timeout */
+	u_int button2timeout;	/* 3 button emulation timeout */
 	enum bt3_emul_state	mouse_button_state;
 	struct timespec		mouse_button_state_ts;
 	int			mouse_move_delayed;
@@ -441,7 +441,7 @@ static struct quirks_context *quirks;
 static int	opt_rate = 0;
 static int	opt_resolution = MOUSE_RES_UNKNOWN;
 
-static u_int	opt_wmode;
+static u_int	opt_wmode = 0;
 static int	opt_clickthreshold = -1;
 static bool	opt_e3b_enabled = false;
 static int	opt_e3b_button2timeout = -1;
@@ -642,7 +642,7 @@ main(int argc, char *argv[])
 				warnx("invalid argument `%s'", optarg);
 				usage();
 			}
-			opt_wmode = 1 << (ul - 1);
+			opt_wmode = ul;
 			break;
 
 		case 'z':
@@ -1409,7 +1409,7 @@ r_init_dev_sysmouse(int fd, struct device *dev)
 }
 
 static void
-r_init_buttons(struct btstate *bt, struct e3bstate *e3b)
+r_init_buttons(struct quirks *q, struct btstate *bt, struct e3bstate *e3b)
 {
 	struct timespec ts;
 	int i, j;
@@ -1433,8 +1433,14 @@ r_init_buttons(struct btstate *bt, struct e3bstate *e3b)
 		memcpy(bt->zmap, opt_btstate.zmap, sizeof(bt->zmap));
 	if (opt_clickthreshold >= 0)
 		bt->clickthreshold = opt_clickthreshold;
+	else
+		quirks_get_uint32(q, MOUSED_CLICK_THRESHOLD, &bt->clickthreshold);
 	if (opt_wmode != 0)
 		bt->wmode = opt_wmode;
+	else
+		quirks_get_uint32(q, MOUSED_WMODE, &bt->wmode);
+	if (bt->wmode != 0)
+		bt->wmode = 1 << (bt->wmode - 1);
 
 	/* fix Z axis mapping */
 	for (i = 0; i < ZMAP_MAXBUTTON; ++i) {
@@ -1453,10 +1459,14 @@ r_init_buttons(struct btstate *bt, struct e3bstate *e3b)
 		.enabled = false,
 		.button2timeout = DFLT_BUTTON2TIMEOUT,
 	};
-	if (opt_e3b_enabled)
-		e3b->enabled = true;
+	e3b->enabled = opt_e3b_enabled;
+	if (!e3b->enabled)
+		quirks_get_bool(q, MOUSED_EMULATE_THIRD_BUTTON, &e3b->enabled);
 	if (opt_e3b_button2timeout >= 0)
 		e3b->button2timeout = opt_e3b_button2timeout;
+	else
+		quirks_get_uint32(q, MOUSED_EMULATE_THIRD_BUTTON_TIMEOUT,
+		    &e3b->button2timeout);
 	e3b->mouse_button_state = S0;
 	e3b->mouse_button_state_ts = ts;
 	e3b->mouse_move_delayed = 0;
@@ -1837,7 +1847,7 @@ r_init(const char *path)
 		return (NULL);
 	}
 
-	r_init_buttons(&r->btstate, &r->e3b);
+	r_init_buttons(q, &r->btstate, &r->e3b);
 	r_init_scroll(&r->scroll);
 	r_init_accel(q, &r->accel);
 	switch (type) {

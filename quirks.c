@@ -1032,12 +1032,11 @@ parse_moused(struct quirks_context *ctx,
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_WMODE))) {
 		p->id = MOUSED_WMODE;
-		if (!parse_boolean_property(value, &b))
+		if (!safe_atou(value, &v))
 			goto out;
-		p->type = PT_BOOL;
-		p->value.b = b;
+		p->type = PT_UINT;
+		p->value.u = v;
 		rc = true;
-
 	} else if (streq(key, quirk_get_name(MOUSED_TWO_FINGER_SCROLL))) {
 		p->id = MOUSED_TWO_FINGER_SCROLL;
 		if (!parse_boolean_property(value, &b))
