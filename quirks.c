@@ -308,13 +308,14 @@ quirk_get_name(enum quirk q)
 	case MOUSED_EMULATE_THIRD_BUTTON_TIMEOUT:	return "MousedEmulateThirdButtonTimeout";
 	case MOUSED_EXPONENTIAL_ACCEL:			return "MousedExponentialAccel";
 	case MOUSED_EXPONENTIAL_OFFSET:			return "MousedExponentialOffset";
-	case MOUSED_HSCROLL_ENABLE:			return "MousedHScrollEnable";
 	case MOUSED_LINEAR_ACCEL_X:			return "MousedLinearAccelX";
 	case MOUSED_LINEAR_ACCEL_Y:			return "MousedLinearAccelY";
 	case MOUSED_LINEAR_ACCEL_Z:			return "MousedLinearAccelZ";
 	case MOUSED_MAP_Z_AXIS:				return "MousedMapZAxis";
 	case MOUSED_VIRTUAL_SCROLL_ENABLE:		return "MousedVirtualScrollEnable";
-	case MOUSED_VIRTUAL_SCROLL_DISTANCE:		return "MousedVirtualScrollDistance";
+	case MOUSED_HOR_VIRTUAL_SCROLL_ENABLE:		return "MousedHorVirtualScrollEnable";
+	case MOUSED_VIRTUAL_SCROLL_SPEED:		return "MousedVirtualScrollSpeed";
+	case MOUSED_VIRTUAL_SCROLL_THRESHOLD:		return "MousedVirtualScrollThreshold";
 	case MOUSED_WMODE:				return "MousedWMode";
 
 	case MOUSED_TWO_FINGER_SCROLL:			return "MousedTwoFingerScroll";
@@ -979,13 +980,6 @@ parse_moused(struct quirks_context *ctx,
 		p->type = PT_DOUBLE;
 		p->value.d = d;
 		rc = true;
-	} else if (streq(key, quirk_get_name(MOUSED_HSCROLL_ENABLE))) {
-		p->id = MOUSED_HSCROLL_ENABLE;
-		if (!parse_boolean_property(value, &b))
-			goto out;
-		p->type = PT_BOOL;
-		p->value.b = b;
-		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_LINEAR_ACCEL_X))) {
 		p->id = MOUSED_LINEAR_ACCEL_X;
 		if (!safe_atod(value, &d))
@@ -1015,8 +1009,22 @@ parse_moused(struct quirks_context *ctx,
 		p->type = PT_BOOL;
 		p->value.b = b;
 		rc = true;
-	} else if (streq(key, quirk_get_name(MOUSED_VIRTUAL_SCROLL_DISTANCE))) {
-		p->id = MOUSED_VIRTUAL_SCROLL_DISTANCE;
+	} else if (streq(key, quirk_get_name(MOUSED_HOR_VIRTUAL_SCROLL_ENABLE))) {
+		p->id = MOUSED_HOR_VIRTUAL_SCROLL_ENABLE;
+		if (!parse_boolean_property(value, &b))
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_VIRTUAL_SCROLL_SPEED))) {
+		p->id = MOUSED_VIRTUAL_SCROLL_SPEED;
+		if (!safe_atou(value, &v))
+			goto out;
+		p->type = PT_UINT;
+		p->value.u = v;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_VIRTUAL_SCROLL_THRESHOLD))) {
+		p->id = MOUSED_VIRTUAL_SCROLL_THRESHOLD;
 		if (!safe_atou(value, &v))
 			goto out;
 		p->type = PT_UINT;
