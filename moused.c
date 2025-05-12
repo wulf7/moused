@@ -898,7 +898,7 @@ expoacc(struct accel *acc, int dx, int dy, int dz,
 static void
 moused(void)
 {
-	struct rodent *r = SLIST_FIRST(&rodents);
+	struct rodent *r = NULL;
 	mousestatus_t action0;		/* original mouse action */
 	mousestatus_t action;		/* interim buffer */
 	mousestatus_t action2;		/* mapped action */
@@ -957,12 +957,8 @@ moused(void)
 					logwarn("devd connection is closed");
 					close(dfd);
 					dfd = -1;
-				} else {
-					bool r_exist = r != NULL;
+				} else
 					fetch_and_parse_devd();
-					if (!r_exist)
-						r = SLIST_FIRST(&rodents);
-				}
 			} else if (ke[0].filter == EVFILT_TIMER) {
 				/* DO NOTHING */
 			}
@@ -996,7 +992,7 @@ moused(void)
 						continue;
 					else if (devpath == NULL) {
 						r_deinit(r);
-						r = SLIST_FIRST(&rodents);
+						r = NULL;
 						continue;
 					} else
 						return;
