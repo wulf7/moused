@@ -297,7 +297,6 @@ quirk_get_name(enum quirk q)
 	case QUIRK_ATTR_INPUT_PROP:			return "AttrInputProp";
 
 	case MOUSED_GRAB_DEVICE:			return "MousedGrabDevice";
-	case MOUSED_PID_FILE:				return "MousedPidFile";
 
 	case MOUSED_CLICK_THRESHOLD:			return "MousedClickThreshold";
 	case MOUSED_DRIFT_TERMINATE:			return "MousedDriftTerminate";
@@ -911,11 +910,6 @@ parse_moused(struct quirks_context *ctx,
 			goto out;
 		p->type = PT_BOOL;
 		p->value.b = b;
-		rc = true;
-	} else if (streq(key, quirk_get_name(MOUSED_PID_FILE))) {
-		p->id = MOUSED_PID_FILE;
-		p->type = PT_STRING;
-		p->value.s = safe_strdup(value);
 		rc = true;
 	} else if (streq(key, quirk_get_name(MOUSED_CLICK_THRESHOLD))) {
 		p->id = MOUSED_CLICK_THRESHOLD;
