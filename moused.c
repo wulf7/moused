@@ -926,7 +926,6 @@ moused(void)
 
 		if (dfd == -1 && devpath == NULL)
 			dfd = connect_devd();
-		b_size = rifs[r->dev.iftype].p_size;
 		timeout = r->tp.gest.idletimeout;
 		nchanges = 0;
 		if (r->e3b.enabled &&
@@ -989,6 +988,7 @@ moused(void)
 		} else {
 			/* mouse movement */
 			if (c > 0 && ke[0].filter == EVFILT_READ) {
+				b_size = rifs[r->dev.iftype].p_size;
 				r_size = read(r->mfd, &b, b_size);
 				if (r_size == -1) {
 					if (errno == EWOULDBLOCK)
