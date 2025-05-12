@@ -769,8 +769,6 @@ main(int argc, char *argv[])
 
 	if (devpath == NULL) {
 		r_init_all();
-		if (SLIST_EMPTY(&rodents))
-			logerrx(1, "No devices found");
 	} else {
 		if ((r = r_init(devpath)) == NULL)
 			logerrx(1, "Can not initialize device");
@@ -904,7 +902,6 @@ moused(void)
 	mousestatus_t action0;		/* original mouse action */
 	mousestatus_t action;		/* interim buffer */
 	mousestatus_t action2;		/* mapped action */
-	int timeout;
 	struct kevent ke[2];
 	int nchanges;
 	union {
@@ -926,17 +923,17 @@ moused(void)
 
 		if (dfd == -1 && devpath == NULL)
 			dfd = connect_devd();
-		timeout = r->tp.gest.idletimeout;
 		nchanges = 0;
-		if (r->e3b.enabled &&
+		if (r != NULL && r->e3b.enabled &&
 		    S_DELAYED(r->e3b.mouse_button_state)) {
 			EV_SET(ke + nchanges, r->mfd << 1, EVFILT_TIMER,
 			    EV_ADD | EV_ENABLE | EV_DISPATCH, 0, 20, r);
 			nchanges++;
 		}
-		if (timeout > 0) {
+		if (r != NULL && r->tp.gest.idletimeout > 0) {
 			EV_SET(ke + nchanges, r->mfd << 1 | 1, EVFILT_TIMER,
-			    EV_ADD | EV_ENABLE | EV_DISPATCH, 0, timeout, r);
+			    EV_ADD | EV_ENABLE | EV_DISPATCH,
+			    0, r->tp.gest.idletimeout, r);
 			nchanges++;
 		}
 		if (dfd == -1 && nchanges == 0 && devpath == NULL) {
@@ -945,7 +942,7 @@ moused(void)
 			nchanges++;
 		}
 
-		if (timeout != 0) {
+		if (!(r != NULL && r->tp.gest.idletimeout == 0)) {
 			c = kevent(kfd, ke, nchanges, ke, 1, NULL);
 			if (c <= 0) {			/* error */
 				logwarn("failed to read from mouse");
@@ -960,8 +957,12 @@ moused(void)
 					logwarn("devd connection is closed");
 					close(dfd);
 					dfd = -1;
-				} else
+				} else {
+					bool r_exist = r != NULL;
 					fetch_and_parse_devd();
+					if (!r_exist)
+						r = SLIST_FIRST(&rodents);
+				}
 			} else if (ke[0].filter == EVFILT_TIMER) {
 				/* DO NOTHING */
 			}
@@ -995,10 +996,7 @@ moused(void)
 						continue;
 					else if (devpath == NULL) {
 						r_deinit(r);
-						if (SLIST_EMPTY(&rodents)) {
-							logwarnx("No mices left");
-							return;
-						}
+						r = SLIST_FIRST(&rodents);
 						continue;
 					} else
 						return;
@@ -1014,7 +1012,8 @@ moused(void)
 				    EV_DISABLE, 0, 0, r);
 				kevent(kfd, ke, 2, NULL, 0, NULL);
 			} else {
-				b.ie.time.tv_sec = timeout == 0 ? 0 : LONG_MAX;
+				b.ie.time.tv_sec =
+				    r->tp.gest.idletimeout == 0 ? 0 : LONG_MAX;
 				b.ie.time.tv_usec = 0;
 				b.ie.type = EV_SYN;
 				b.ie.code = SYN_REPORT;
