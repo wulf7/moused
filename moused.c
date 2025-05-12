@@ -366,8 +366,8 @@ enum scroll_state {
 struct scroll {
 	bool	enable_vert;
 	bool	enable_hor;
-	int	threshold;	/* Movement distance before virtual scrolling */
-	int	speed;		/* Movement distance to rate of scrolling */
+	u_int	threshold;	/* Movement distance before virtual scrolling */
+	u_int	speed;		/* Movement distance to rate of scrolling */
 	enum scroll_state state;
 	int	movement;
 	int	hmovement;
@@ -1697,23 +1697,27 @@ r_init_accel(struct quirks *q, struct accel *acc)
 }
 
 static void
-r_init_scroll(struct scroll *scroll)
+r_init_scroll(struct quirks *q, struct scroll *scroll)
 {
 	*scroll = (struct scroll) {
-		.enable_vert = false,
-		.enable_hor = false,
 		.threshold = DFLT_SCROLLTHRESHOLD,
 		.speed = DFLT_SCROLLSPEED,
 		.state = SCROLL_NOTSCROLLING,
 	};
-	if (opt_virtual_scroll)
-		scroll->enable_vert = true;
-	if (opt_hvirtual_scroll)
-		scroll->enable_hor = true;
+	scroll->enable_vert = opt_virtual_scroll;
+	if (!opt_virtual_scroll)
+		quirks_get_bool(q, MOUSED_VIRTUAL_SCROLL_ENABLE, &scroll->enable_vert);
+	scroll->enable_hor = opt_hvirtual_scroll;
+	if (!opt_hvirtual_scroll)
+		quirks_get_bool(q, MOUSED_HOR_VIRTUAL_SCROLL_ENABLE, &scroll->enable_hor);
 	if (opt_scroll_speed >= 0)
 		scroll->speed = opt_scroll_speed;
+	else
+		quirks_get_uint32(q, MOUSED_VIRTUAL_SCROLL_SPEED, &scroll->speed);
 	if (opt_scroll_threshold >= 0)
 		scroll->threshold = opt_scroll_threshold;
+	else
+		quirks_get_uint32(q, MOUSED_VIRTUAL_SCROLL_THRESHOLD, &scroll->threshold);
 }
 
 static struct rodent *
@@ -1848,7 +1852,7 @@ r_init(const char *path)
 	}
 
 	r_init_buttons(q, &r->btstate, &r->e3b);
-	r_init_scroll(&r->scroll);
+	r_init_scroll(q, &r->scroll);
 	r_init_accel(q, &r->accel);
 	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
