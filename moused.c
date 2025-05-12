@@ -962,7 +962,14 @@ moused(void)
 				if (r_size == -1) {
 					if (errno == EWOULDBLOCK)
 						continue;
-					else
+					else if (devpath == NULL) {
+						r_deinit(r);
+						if (SLIST_EMPTY(&rodents)) {
+							logwarnx("No mices left");
+							return;
+						}
+						continue;
+					} else
 						return;
 				}
 				if (r_size != b_size) {
