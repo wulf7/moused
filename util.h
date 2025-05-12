@@ -70,7 +70,7 @@ enum device_type {
 };
 
 struct device {
-	const char *path;
+	char path[80];
 	enum device_if iftype;
 	enum device_type type;
 	char name[80];

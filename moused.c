@@ -1763,7 +1763,7 @@ r_init(const char *path)
 	}
 
 	memset(&dev, 0, sizeof(struct device));
-	dev.path = path;
+	strlcpy(dev.path, path, sizeof(dev.path));
 	dev.iftype = iftype;
 	dev.type = type;
 	switch (iftype) {
