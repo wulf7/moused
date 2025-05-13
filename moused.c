@@ -919,7 +919,6 @@ moused(void)
 	ssize_t r_size;
 	int flags;
 	int c;
-	int i;
 
 	/* clear mouse data */
 	bzero(&action0, sizeof(action0));
@@ -1610,9 +1609,7 @@ r_init_touchpad_hw(int fd, struct quirks *q, struct tpcaps *tphw,
 	bitstr_t bit_decl(prop_bits, INPUT_PROP_CNT);
 	struct quirk_range r;
 	struct quirk_dimensions dim;
-	int i;
 	u_int u;
-	int sz_x, sz_y;
 
 	ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits);
 	ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits);
@@ -2091,7 +2088,6 @@ r_protocol_evdev(enum device_type type, struct tpad *tp, struct evstate *ev,
 	    MOUSE_BUTTON1DOWN | MOUSE_BUTTON2DOWN | MOUSE_BUTTON3DOWN
 	};
 	struct timespec ietime;
-	int i, active;
 
 	/* Drop ignored codes */
 	switch (ie->type) {
