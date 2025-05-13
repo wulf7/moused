@@ -1888,6 +1888,7 @@ r_init(const char *path)
 		debug("failed to initialize device: %s %s on %s",
 		    r_if(iftype), r_name(type), path);
 		close(fd);
+		quirks_unref(q);
 		errno = err;
 		return (NULL);
 	}
@@ -1902,6 +1903,7 @@ r_init(const char *path)
 		logwarnx("failed to register kevent on %s", path);
 		close(fd);
 		free(r);
+		quirks_unref(q);
 		return (NULL);
 	}
 
