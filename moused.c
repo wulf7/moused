@@ -480,6 +480,7 @@ static void	usage(void);
 static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 		    __printflike(3, 4);
 
+static int	r_daemon(void);
 static enum device_if	r_identify_if(int fd);
 static enum device_type	r_identify_evdev(int fd);
 static enum device_type	r_identify_sysmouse(int fd);
@@ -800,7 +801,7 @@ main(int argc, char *argv[])
 				logerrx(1, "moused already running, pid: %d", mpid);
 			logwarn("cannot open pid file");
 		}
-		if (daemon(0, 0)) {
+		if (r_daemon()) {
 			int saved_errno = errno;
 			pidfile_remove(pfh);
 			errno = saved_errno;
@@ -1228,6 +1229,59 @@ log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 	va_start(ap, fmt);
 	log_or_warn_va(log_pri, errnum, fmt, ap);
 	va_end(ap);
+}
+
+static int
+r_daemon(void)
+{
+	struct sigaction osa, sa;
+	pid_t newgrp;
+	int oerrno;
+	int osa_ok;
+	int nullfd;
+
+	/* A SIGHUP may be thrown when the parent exits below. */
+	sigemptyset(&sa.sa_mask);
+	sa.sa_handler = SIG_IGN;
+	sa.sa_flags = 0;
+	osa_ok = sigaction(SIGHUP, &sa, &osa);
+
+	/* Keep kqueue fd alive */
+	switch (rfork(RFPROC)) {
+	case -1:
+		return (-1);
+	case 0:
+		break;
+	default:
+		/*
+		 * A fine point:  _exit(0), not exit(0), to avoid triggering
+		 * atexit(3) processing
+		 */
+		_exit(0);
+	}
+
+	newgrp = setsid();
+	oerrno = errno;
+	if (osa_ok != -1)
+		sigaction(SIGHUP, &osa, NULL);
+
+	if (newgrp == -1) {
+		errno = oerrno;
+		return (-1);
+	}
+
+	(void)chdir("/");
+
+	nullfd = open("/dev/null", O_RDWR, 0);
+	if (nullfd != -1) {
+		(void)dup2(nullfd, STDIN_FILENO);
+		(void)dup2(nullfd, STDOUT_FILENO);
+		(void)dup2(nullfd, STDERR_FILENO);
+	}
+	if (nullfd > 2)
+		close(nullfd);
+
+	return (0);
 }
 
 static inline int
