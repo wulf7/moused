@@ -284,6 +284,10 @@ struct evstate {
 	/* Absolute multi-touch */
 	int		slot;
 	struct finger	mt[MAX_FINGERS];
+	bitstr_t bit_decl(key_ignore, KEY_CNT);
+	bitstr_t bit_decl(rel_ignore, REL_CNT);
+	bitstr_t bit_decl(abs_ignore, ABS_CNT);
+	bitstr_t bit_decl(prop_ignore, INPUT_PROP_CNT);
 };
 
 /* button status */
@@ -1463,6 +1467,67 @@ r_init_dev_sysmouse(int fd, struct device *dev)
 }
 
 static void
+r_init_evstate(struct quirks *q, struct evstate *ev)
+{
+	const struct quirk_tuples *t;
+	bitstr_t *bitstr;
+	size_t maxbit;
+
+	if (quirks_get_tuples(q, QUIRK_ATTR_EVENT_CODE, &t)) {
+		for (size_t i = 0; i < t->ntuples; i++) {
+			int type = t->tuples[i].first;
+			int code = t->tuples[i].second;
+			bool enable = t->tuples[i].third;
+
+			switch (type) {
+			case EV_KEY:
+				bitstr = (bitstr_t *)&ev->key_ignore;
+				maxbit = KEY_MAX;
+				break;
+			case EV_REL:
+				bitstr = (bitstr_t *)&ev->rel_ignore;
+				maxbit = REL_MAX;
+				break;
+			case EV_ABS:
+				bitstr = (bitstr_t *)&ev->abs_ignore;
+				maxbit = ABS_MAX;
+				break;
+			default:
+				continue;
+			}
+
+			if (code == EVENT_CODE_UNDEFINED) {
+				if (enable)
+					bit_nclear(bitstr, 0, maxbit);
+				else
+					bit_nset(bitstr, 0, maxbit);
+			} else {
+				if (code > maxbit)
+					continue;
+				if (enable)
+					bit_clear(bitstr, code);
+				else
+					bit_set(bitstr, code);
+	                }
+	        }
+	}
+
+	if (quirks_get_tuples(q, QUIRK_ATTR_INPUT_PROP, &t)) {
+		for (size_t idx = 0; idx < t->ntuples; idx++) {
+			unsigned int p = t->tuples[idx].first;
+			bool enable = t->tuples[idx].second;
+
+			if (p > INPUT_PROP_MAX)
+				continue;
+			if (enable)
+				bit_clear(ev->prop_ignore, p);
+			else
+				bit_set(ev->prop_ignore, p);
+                }
+        }
+}
+
+static void
 r_init_buttons(struct quirks *q, struct btstate *bt, struct e3bstate *e3b)
 {
 	struct timespec ts;
@@ -1536,7 +1601,8 @@ r_init_buttons(struct quirks *q, struct btstate *bt, struct e3bstate *e3b)
 }
 
 static void
-r_init_touchpad_hw(int fd, struct quirks *q, struct tpcaps *tphw)
+r_init_touchpad_hw(int fd, struct quirks *q, struct tpcaps *tphw,
+     struct evstate *ev)
 {
 	struct input_absinfo ai;
 	bitstr_t bit_decl(key_bits, KEY_CNT);
@@ -1551,13 +1617,15 @@ r_init_touchpad_hw(int fd, struct quirks *q, struct tpcaps *tphw)
 	ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits);
 	ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits);
 
-	if (ioctl(fd, EVIOCGABS(ABS_X), &ai) >= 0) {
+	if (!bit_test(ev->abs_ignore, ABS_X) &&
+	     ioctl(fd, EVIOCGABS(ABS_X), &ai) >= 0) {
 		tphw->min_x = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
 		tphw->max_x = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
 		tphw->res_x = ai.resolution == 0 ?
 		    DFLT_TPAD_RESOLUTION : ai.resolution;
 	}
-	if (ioctl(fd, EVIOCGABS(ABS_Y), &ai) >= 0) {
+	if (!bit_test(ev->abs_ignore, ABS_Y) &&
+	     ioctl(fd, EVIOCGABS(ABS_Y), &ai) >= 0) {
 		tphw->min_y = (ai.maximum > ai.minimum) ? ai.minimum : INT_MIN;
 		tphw->max_y = (ai.maximum > ai.minimum) ? ai.maximum : INT_MAX;
 		tphw->res_y = ai.resolution == 0 ?
@@ -1571,11 +1639,13 @@ r_init_touchpad_hw(int fd, struct quirks *q, struct tpcaps *tphw)
 		tphw->res_x = (tphw->max_x - tphw->min_x) / dim.x;
 		tphw->res_y = (tphw->max_y - tphw->min_y) / dim.y;
 	}
-	if (bit_test(key_bits, BTN_TOUCH))
+	if (!bit_test(ev->key_ignore, BTN_TOUCH) &&
+	     bit_test(key_bits, BTN_TOUCH))
 		tphw->cap_touch = true;
 	/* XXX: libinput uses ABS_MT_PRESSURE where available */
-	if (bit_test(abs_bits, ABS_PRESSURE) &&
-	    ioctl(fd, EVIOCGABS(ABS_PRESSURE), &ai) >= 0) {
+	if (!bit_test(ev->abs_ignore, ABS_PRESSURE) &&
+	     bit_test(abs_bits, ABS_PRESSURE) &&
+	     ioctl(fd, EVIOCGABS(ABS_PRESSURE), &ai) >= 0) {
 		tphw->cap_pressure = true;
 		tphw->min_p = ai.minimum;
 		tphw->max_p = ai.maximum;
@@ -1593,20 +1663,27 @@ r_init_touchpad_hw(int fd, struct quirks *q, struct tpcaps *tphw)
 		}
 	}
 	/* XXX: libinput uses ABS_MT_TOUCH_MAJOR where available */
-	if (bit_test(abs_bits, ABS_TOOL_WIDTH) &&
-	    quirks_get_uint32(q, QUIRK_ATTR_PALM_SIZE_THRESHOLD, &u) &&
-	    u != 0)
+	if (!bit_test(ev->abs_ignore, ABS_TOOL_WIDTH) &&
+	     bit_test(abs_bits, ABS_TOOL_WIDTH) &&
+	     quirks_get_uint32(q, QUIRK_ATTR_PALM_SIZE_THRESHOLD, &u) &&
+	     u != 0)
 		tphw->cap_width = true;
-	if (bit_test(abs_bits, ABS_MT_SLOT) &&
-	    bit_test(abs_bits, ABS_MT_TRACKING_ID) &&
-	    bit_test(abs_bits, ABS_MT_POSITION_X) &&
-	    bit_test(abs_bits, ABS_MT_POSITION_Y))
+	if (!bit_test(ev->abs_ignore, ABS_MT_SLOT) &&
+	     bit_test(abs_bits, ABS_MT_SLOT) &&
+	    !bit_test(ev->abs_ignore, ABS_MT_TRACKING_ID) &&
+	     bit_test(abs_bits, ABS_MT_TRACKING_ID) &&
+	    !bit_test(ev->abs_ignore, ABS_MT_POSITION_X) &&
+	     bit_test(abs_bits, ABS_MT_POSITION_X) &&
+	    !bit_test(ev->abs_ignore, ABS_MT_POSITION_Y) &&
+	     bit_test(abs_bits, ABS_MT_POSITION_Y))
 		tphw->is_mt = true;
-	if (ioctl(fd, EVIOCGPROP(sizeof(prop_bits)), prop_bits) >= 0 &&
-	    bit_test(prop_bits, INPUT_PROP_BUTTONPAD))
+	if ( ioctl(fd, EVIOCGPROP(sizeof(prop_bits)), prop_bits) >= 0 &&
+	    !bit_test(ev->prop_ignore, INPUT_PROP_BUTTONPAD) &&
+	     bit_test(prop_bits, INPUT_PROP_BUTTONPAD))
 		tphw->is_clickpad = true;
-	if (tphw->is_clickpad &&
-	    bit_test(prop_bits, INPUT_PROP_TOPBUTTONPAD))
+	if ( tphw->is_clickpad &&
+	    !bit_test(ev->prop_ignore, INPUT_PROP_TOPBUTTONPAD) &&
+	     bit_test(prop_bits, INPUT_PROP_TOPBUTTONPAD))
 		tphw->is_topbuttonpad = true;
 }
 
@@ -1918,12 +1995,14 @@ r_init(const char *path)
 		return (NULL);
 	}
 
+	if (iftype == DEVICE_IF_EVDEV)
+		r_init_evstate(q, &r->ev);
 	r_init_buttons(q, &r->btstate, &r->e3b);
 	r_init_scroll(q, &r->scroll);
 	r_init_accel(q, &r->accel);
 	switch (type) {
 	case DEVICE_TYPE_TOUCHPAD:
-		r_init_touchpad_hw(fd, q, &r->tp.hw);
+		r_init_touchpad_hw(fd, q, &r->tp.hw, &r->ev);
 		r_init_touchpad_info(q, &r->tp.hw, &r->tp.info);
 		r_init_touchpad_accel(&r->tp.hw, &r->accel);
 		r_init_touchpad_gesture(&r->tp.gest);
@@ -2013,6 +2092,19 @@ r_protocol_evdev(enum device_type type, struct tpad *tp, struct evstate *ev,
 	};
 	struct timespec ietime;
 	int i, active;
+
+	/* Drop ignored codes */
+	switch (ie->type) {
+	case EV_REL:
+		if (bit_test(ev->rel_ignore, ie->code))
+			return (0);
+	case EV_ABS:
+		if (bit_test(ev->abs_ignore, ie->code))
+			return (0);
+	case EV_KEY:
+		if (bit_test(ev->key_ignore, ie->code))
+			return (0);
+	}
 
 	if (debug > 1)
 		debug("received event 0x%02x, 0x%04x, %d",
