@@ -2164,14 +2164,20 @@ r_protocol_evdev(enum device_type type, struct tpad *tp, struct evstate *ev,
 		case ABS_MT_POSITION_X:
 			if (tphw->is_mt &&
 			    ev->slot >= 0 && ev->slot < MAX_FINGERS) {
-				ev->dx += ie->value - ev->mt[ev->slot].x;
+			    	/* Find fastest finger */
+			        int dx = ie->value - ev->mt[ev->slot].x;
+				if (abs(dx) > abs(ev->dx))
+					ev->dx = dx;
 				ev->mt[ev->slot].x = ie->value;
 			}
 			break;
 		case ABS_MT_POSITION_Y:
 			if (tphw->is_mt &&
 			    ev->slot >= 0 && ev->slot < MAX_FINGERS) {
-				ev->dy += ie->value - ev->mt[ev->slot].y;
+			    	/* Find fastest finger */
+				int dy = ie->value - ev->mt[ev->slot].y;
+				if (abs(dy) > abs(ev->dy))
+					ev->dy = dy;
 				ev->mt[ev->slot].y = ie->value;
 			}
 			break;
@@ -2224,22 +2230,6 @@ r_protocol_evdev(enum device_type type, struct tpad *tp, struct evstate *ev,
 	act->obutton = act->button;
 	act->button = butmapev[ev->buttons & MOUSE_SYS_STDBUTTONS];
 	act->button |= (ev->buttons & ~MOUSE_SYS_STDBUTTONS);
-
-	/* Convert cumulative to average movement in MT case */
-	if (tphw->is_mt) {
-		active = 0;
-		for (i = 0; i < MAX_FINGERS; i++)
-			if (ev->mt[i].id != 0)
-				active++;
-		/* Do not count finger holding a click as active */
-		if (tphw->is_clickpad && ev->buttons != 0)
-			active--;
-		if (active > 1) {
-			/* XXX: We should dynamically update rodent.accel */
-			ev->dx /= active;
-			ev->dy /= active;
-		}
-	}
 
 	if (type == DEVICE_TYPE_TOUCHPAD) {
 		if (debug > 1)
