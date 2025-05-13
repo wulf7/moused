@@ -112,6 +112,7 @@ enum quirk {
 
 	/* Daemon parameters */
 	MOUSED_GRAB_DEVICE = 1000,
+	MOUSED_IGNORE_DEVICE,
 
 	/* Standard moused parameters */
 	MOUSED_CLICK_THRESHOLD,

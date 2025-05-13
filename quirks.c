@@ -297,6 +297,7 @@ quirk_get_name(enum quirk q)
 	case QUIRK_ATTR_INPUT_PROP:			return "AttrInputProp";
 
 	case MOUSED_GRAB_DEVICE:			return "MousedGrabDevice";
+	case MOUSED_IGNORE_DEVICE:			return "MousedIgnoreDevice";
 
 	case MOUSED_CLICK_THRESHOLD:			return "MousedClickThreshold";
 	case MOUSED_DRIFT_TERMINATE:			return "MousedDriftTerminate";
@@ -906,6 +907,13 @@ parse_moused(struct quirks_context *ctx,
 
 	if (streq(key, quirk_get_name(MOUSED_GRAB_DEVICE))) {
 		p->id = MOUSED_GRAB_DEVICE;
+		if (!parse_boolean_property(value, &b))
+			goto out;
+		p->type = PT_BOOL;
+		p->value.b = b;
+		rc = true;
+	} else if (streq(key, quirk_get_name(MOUSED_IGNORE_DEVICE))) {
+		p->id = MOUSED_IGNORE_DEVICE;
 		if (!parse_boolean_property(value, &b))
 			goto out;
 		p->type = PT_BOOL;

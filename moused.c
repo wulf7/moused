@@ -1785,6 +1785,8 @@ r_init(const char *path)
 	enum device_type type;
 	int fd, err;
 	bool grab;
+	bool ignore;
+	bool qvalid;
 
 	fd = open(path, O_RDWR | O_NONBLOCK);
 	if (fd == -1) {
@@ -1859,12 +1861,21 @@ r_init(const char *path)
 
 	q = quirks_fetch_for_device(quirks, &dev);
 
+	qvalid = quirks_get_bool(q, MOUSED_IGNORE_DEVICE, &ignore);
+	if (qvalid && ignore) {
+		debug("%s: device ignored", path);
+		close(fd);
+		quirks_unref(q);
+		errno = EPERM;
+		return (NULL);
+	}
+
 	switch (iftype) {
 	case DEVICE_IF_EVDEV:
 		grab = opt_grab;
 		if (!grab)
-			quirks_get_bool(q, MOUSED_GRAB_DEVICE, &grab);
-		if (grab && ioctl(fd, EVIOCGRAB, 1) == -1) {
+			qvalid = quirks_get_bool(q, MOUSED_GRAB_DEVICE, &grab);
+		if (qvalid && grab && ioctl(fd, EVIOCGRAB, 1) == -1) {
 			logwarnx("failed to grab %s", path);
 			err = errno;
 		}
