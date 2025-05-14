@@ -35,12 +35,8 @@
 
 #define	HAVE_LOCALE_H	1
 
-#define	versionsort	alphasort
-
 #define LIBINPUT_ATTRIBUTE_PRINTF(_format, _args) \
 	__attribute__ ((format (printf, _format, _args)))
-
-#define	bit(x_) (1UL << (x_))
 
 #define	ARRAY_LENGTH(a) (sizeof (a) / sizeof (a)[0])
 /**
@@ -52,6 +48,8 @@
 	     _elem < (_arr) + ARRAY_LENGTH(_arr); \
 	     _elem++)
 
+#define versionsort(...) alphasort(__VA_ARGS__)
+#define bit(x_) (1UL << (x_))
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
 /* Supported device interfaces */
