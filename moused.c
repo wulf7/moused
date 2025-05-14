@@ -611,7 +611,9 @@ main(int argc, char *argv[])
 			break;
 
 		case 'p':
-			devpath = optarg;
+			/* "auto" is an alias to no devpath */
+			if (strcmp(optarg, "auto") != 0)
+				devpath = optarg;
 			break;
 
 		case 'r':
