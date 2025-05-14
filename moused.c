@@ -3003,8 +3003,9 @@ r_gestures(struct tpad *tp, int x0, int y0, int z, int w, int nfingers,
 		if (!gest->in_taphold && !ms->button &&
 		    (!gest->in_vscroll || two_finger_scroll) &&
 		    (tscmp(time, &gest->taptimeout, >) ||
-		     dx >= tpinfo->vscroll_min_delta * tphw->res_x ||
-		     dy >= tpinfo->vscroll_min_delta * tphw->res_y)) {
+		    ((gest->fingers_nb == 2 || !two_finger_scroll) &&
+		    (dx >= tpinfo->vscroll_min_delta * tphw->res_x ||
+		     dy >= tpinfo->vscroll_min_delta * tphw->res_y)))) {
 			/*
 			 * Handle two finger scrolling.
 			 * Note that we don't rely on fingers_nb
