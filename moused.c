@@ -1015,9 +1015,21 @@ moused(void)
 				    EV_DISABLE, 0, 0, r);
 				kevent(kfd, ke, 2, NULL, 0, NULL);
 			} else {
+				/*
+				 * Gesture timeout expired.
+				 * Notify r_gestures by empty packet.
+				 */
+#ifdef DONE_RIGHT
+				struct timespec ts;
+				clock_gettime(CLOCK_REALTIME, &ts);
+				b.ie.time.tv_sec = ts.tv_sec;
+				b.ie.time.tv_usec = ts.tv_nsec / 1000;
+#else
+				/* Hacky but cheap */
 				b.ie.time.tv_sec =
 				    r->tp.gest.idletimeout == 0 ? 0 : LONG_MAX;
 				b.ie.time.tv_usec = 0;
+#endif
 				b.ie.type = EV_SYN;
 				b.ie.code = SYN_REPORT;
 				b.ie.value = 1;
