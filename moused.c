@@ -252,6 +252,7 @@ struct tpstate {
 	int		zmax;           /* maximum pressure value */
 	struct timespec	taptimeout;     /* tap timeout for touchpads */
 	int		idletimeout;
+	bool		timer_armed;
 };
 
 struct tpad {
@@ -358,6 +359,7 @@ struct e3bstate {
 	enum bt3_emul_state	mouse_button_state;
 	struct timespec		mouse_button_state_ts;
 	int			mouse_move_delayed;
+	bool timer_armed;
 };
 
 enum scroll_state {
@@ -936,12 +938,14 @@ moused(void)
 			EV_SET(ke + nchanges, r->mfd << 1, EVFILT_TIMER,
 			    EV_ADD | EV_ENABLE | EV_DISPATCH, 0, 20, r);
 			nchanges++;
+			r->e3b.timer_armed = true;
 		}
 		if (r != NULL && r->tp.gest.idletimeout > 0) {
 			EV_SET(ke + nchanges, r->mfd << 1 | 1, EVFILT_TIMER,
 			    EV_ADD | EV_ENABLE | EV_DISPATCH,
 			    0, r->tp.gest.idletimeout, r);
 			nchanges++;
+			r->tp.gest.timer_armed = true;
 		}
 		if (dfd == -1 && nchanges == 0 && portname == NULL) {
 			EV_SET(ke + nchanges, UINTPTR_MAX, EVFILT_TIMER,
@@ -980,6 +984,7 @@ moused(void)
 			action0.button = action0.obutton;
 			action0.dx = action0.dy = action0.dz = 0;
 			action0.flags = flags = 0;
+			r->e3b.timer_armed = false;
 			if (r_timeout(&r->e3b) &&
 			    r_statetrans(r, &action0, &action, A_TIMEOUT)) {
 				if (debug > 2)
@@ -1009,11 +1014,22 @@ moused(void)
 					    "%zd bytes", r_size);
 					continue;
 				}
-				EV_SET(ke, r->mfd << 1, EVFILT_TIMER,
-				    EV_DISABLE, 0, 0, r);
-				EV_SET(ke + 1, r->mfd << 1 | 1, EVFILT_TIMER,
-				    EV_DISABLE, 0, 0, r);
-				kevent(kfd, ke, 2, NULL, 0, NULL);
+				/* Disarm nonexpired timers */
+				nchanges = 0;
+				if (r->e3b.timer_armed) {
+					EV_SET(ke + nchanges, r->mfd << 1,
+					    EVFILT_TIMER, EV_DISABLE, 0, 0, r);
+					nchanges++;
+					r->e3b.timer_armed = false;
+				}
+				if (r->tp.gest.timer_armed) {
+					EV_SET(ke + nchanges, r->mfd << 1 | 1,
+					    EVFILT_TIMER, EV_DISABLE, 0, 0, r);
+					nchanges++;
+					r->tp.gest.timer_armed = false;
+				}
+				if (nchanges != 0)
+					kevent(kfd, ke, nchanges, NULL, 0, NULL);
 			} else {
 				/*
 				 * Gesture timeout expired.
@@ -1033,6 +1049,8 @@ moused(void)
 				b.ie.type = EV_SYN;
 				b.ie.code = SYN_REPORT;
 				b.ie.value = 1;
+				if (c > 0)
+					r->tp.gest.timer_armed = false;
 			}
 			r->tp.gest.idletimeout = -1;
 			flags = r->dev.iftype == DEVICE_IF_EVDEV ?
