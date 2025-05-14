@@ -251,7 +251,6 @@ struct tpstate {
 	int		in_vscroll;
 	int		zmax;           /* maximum pressure value */
 	struct timespec	taptimeout;     /* tap timeout for touchpads */
-	struct timespec	startdelay;
 	int		idletimeout;
 };
 
@@ -2926,8 +2925,6 @@ r_gestures(struct tpad *tp, int x0, int y0, int z, int w, int nfingers,
 			else
 				tsclr(&gest->taptimeout);
 
-			gest->startdelay = tsaddms(time, 25);
-
 			gest->fingerdown = true;
 
 			gest->start_x = x0;
@@ -2980,13 +2977,6 @@ r_gestures(struct tpad *tp, int x0, int y0, int z, int w, int nfingers,
 		 */
 		gest->fingers_nb = MAX(nfingers, gest->fingers_nb);
 		gest->zmax = MAX(z, gest->zmax);
-
-		/* Ignore few events at beginning. They are often noisy */
-		if (tscmp(time, &gest->startdelay, <=)) {
-			gest->start_x = x0;
-			gest->start_y = y0;
-			return (GEST_IGNORE);
-		}
 
 		dx = abs(x0 - start_x);
 		dy = abs(y0 - start_y);
