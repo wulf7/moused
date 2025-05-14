@@ -2321,11 +2321,6 @@ r_protocol_evdev(enum device_type type, struct tpad *tp, struct evstate *ev,
 	act->dz = ev->dz;
 	ev->dx = ev->dy = ev->dz = ev->dw = 0;
 
-	/*
-	 * We don't reset pBufP here yet, as there may be an additional data
-	 * byte in some protocols. See above.
-	 */
-
 	/* has something changed? */
 	act->flags = ((act->dx || act->dy || act->dz) ? MOUSE_POSCHANGED : 0)
 	    | (act->obutton ^ act->button);
