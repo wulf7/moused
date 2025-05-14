@@ -434,7 +434,7 @@ static int	identify = ID_NONE;
 static int	cfd = -1;	/* /dev/consolectl file descriptor */
 static int	kfd = -1;	/* kqueue file descriptor */
 static int	dfd = -1;	/* devd socket descriptor */
-static const char *devpath = NULL;
+static const char *portname = NULL;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
 static const char *config_file = CONFDIR "/moused.conf";
@@ -611,9 +611,9 @@ main(int argc, char *argv[])
 			break;
 
 		case 'p':
-			/* "auto" is an alias to no devpath */
+			/* "auto" is an alias to no portname */
 			if (strcmp(optarg, "auto") != 0)
-				devpath = optarg;
+				portname = optarg;
 			break;
 
 		case 'r':
@@ -742,7 +742,7 @@ main(int argc, char *argv[])
 		logerr(1, "cannot open /dev/consolectl");
 	if ((kfd = kqueue()) == -1)
 		logerr(1, "cannot create kqueue");
-	if (devpath == NULL && (dfd = connect_devd()) == -1)
+	if (portname == NULL && (dfd = connect_devd()) == -1)
 		logwarnx("cannot open devd socket");
 
 	switch (setjmp(env)) {
@@ -773,10 +773,10 @@ main(int argc, char *argv[])
 	if (quirks == NULL)
 		logwarnx("cannot open configuration file %s", config_file);
 
-	if (devpath == NULL) {
+	if (portname == NULL) {
 		r_init_all();
 	} else {
-		if ((r = r_init(devpath)) == NULL)
+		if ((r = r_init(portname)) == NULL)
 			logerrx(1, "Can not initialize device");
 	}
 
@@ -928,7 +928,7 @@ moused(void)
 	/* process mouse data */
 	for (;;) {
 
-		if (dfd == -1 && devpath == NULL)
+		if (dfd == -1 && portname == NULL)
 			dfd = connect_devd();
 		nchanges = 0;
 		if (r != NULL && r->e3b.enabled &&
@@ -943,7 +943,7 @@ moused(void)
 			    0, r->tp.gest.idletimeout, r);
 			nchanges++;
 		}
-		if (dfd == -1 && nchanges == 0 && devpath == NULL) {
+		if (dfd == -1 && nchanges == 0 && portname == NULL) {
 			EV_SET(ke + nchanges, UINTPTR_MAX, EVFILT_TIMER,
 			    EV_ADD | EV_ENABLE | EV_ONESHOT, 0, 1000, NULL);
 			nchanges++;
@@ -997,7 +997,7 @@ moused(void)
 				if (r_size == -1) {
 					if (errno == EWOULDBLOCK)
 						continue;
-					else if (devpath == NULL) {
+					else if (portname == NULL) {
 						r_deinit(r);
 						r = NULL;
 						continue;
