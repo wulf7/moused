@@ -54,6 +54,48 @@
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
+/* Supported device interfaces */
+enum device_if {
+	DEVICE_IF_UNKNOWN = -1,
+	DEVICE_IF_EVDEV = 0,
+	DEVICE_IF_SYSMOUSE,
+};
+
+/* Recognized device types */
+enum device_type {
+	DEVICE_TYPE_UNKNOWN = -1,
+	DEVICE_TYPE_MOUSE = 0,
+	DEVICE_TYPE_POINTINGSTICK,
+	DEVICE_TYPE_TOUCHPAD,
+	DEVICE_TYPE_TOUCHSCREEN,
+	DEVICE_TYPE_TABLET,
+	DEVICE_TYPE_TABLET_PAD,
+	DEVICE_TYPE_KEYBOARD,
+	DEVICE_TYPE_JOYSTICK,
+};
+
+struct device {
+	char path[80];
+	enum device_if iftype;
+	enum device_type type;
+	char name[80];
+	char uniq[80];
+	struct input_id id;
+	mousemode_t mode;
+};
+
+/**
+ * @ingroup base
+ *
+ * Log handler type for custom logging.
+ *
+ * @param priority The priority of the current message
+ * @param format Message format in printf-style
+ * @param args Message arguments
+ */
+typedef void moused_log_handler(int priority, int errnum,
+				const char *format, va_list args);
+
 /* util-mem.h */
 
 /**
@@ -96,48 +138,6 @@ _steal(void *ptr) {
   (typeof(*ptr_))_steal(ptr_)
 
 /* ! util-mem.h */
-
-/* Supported device interfaces */
-enum device_if {
-	DEVICE_IF_UNKNOWN = -1,
-	DEVICE_IF_EVDEV = 0,
-	DEVICE_IF_SYSMOUSE,
-};
-
-/* Recognized device types */
-enum device_type {
-	DEVICE_TYPE_UNKNOWN = -1,
-	DEVICE_TYPE_MOUSE = 0,
-	DEVICE_TYPE_POINTINGSTICK,
-	DEVICE_TYPE_TOUCHPAD,
-	DEVICE_TYPE_TOUCHSCREEN,
-	DEVICE_TYPE_TABLET,
-	DEVICE_TYPE_TABLET_PAD,
-	DEVICE_TYPE_KEYBOARD,
-	DEVICE_TYPE_JOYSTICK,
-};
-
-struct device {
-	char path[80];
-	enum device_if iftype;
-	enum device_type type;
-	char name[80];
-	char uniq[80];
-	struct input_id id;
-	mousemode_t mode;
-};
-
-/**
- * @ingroup base
- *
- * Log handler type for custom logging.
- *
- * @param priority The priority of the current message
- * @param format Message format in printf-style
- * @param args Message arguments
- */
-typedef void moused_log_handler(int priority, int errnum,
-				const char *format, va_list args);
 
 /* util-strings.h */
 
