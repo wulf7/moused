@@ -54,8 +54,6 @@
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
-#define	EVENT_CODE_UNDEFINED 0xffff
-
 /* util-mem.h */
 
 /**
@@ -127,11 +125,6 @@ struct device {
 	char uniq[80];
 	struct input_id id;
 	mousemode_t mode;
-};
-
-struct input_prop {
-	unsigned int prop;
-	bool enabled;
 };
 
 /**
@@ -405,10 +398,18 @@ strstartswith(const char *str, const char *prefix)
 
 /* !util-strings.h */
 
-bool	parse_dimension_property(const char *prop, size_t *w, size_t *h);
-bool	parse_range_property(const char *prop, int *hi, int *lo);
-bool	parse_boolean_property(const char *prop, bool *b);
-bool	parse_evcode_property(const char *prop, struct input_event *events,
-	    size_t *nevents);
-bool	parse_input_prop_property(const char *prop,
-	    struct input_prop *props_out, size_t *nprops);
+/* util-prop-parsers.h */
+
+struct input_prop {
+	unsigned int prop;
+	bool enabled;
+};
+
+bool parse_dimension_property(const char *prop, size_t *w, size_t *h);
+bool parse_range_property(const char *prop, int *hi, int *lo);
+bool parse_boolean_property(const char *prop, bool *b);
+#define	EVENT_CODE_UNDEFINED 0xffff
+bool parse_evcode_property(const char *prop, struct input_event *events, size_t *nevents);
+bool parse_input_prop_property(const char *prop, struct input_prop *props_out, size_t *nprops);
+
+/* !util-prop-parsers.h */

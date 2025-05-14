@@ -154,6 +154,8 @@ int strv_for_each_n(const char **strv, size_t max, strv_foreach_callback_t func,
 
 /* !util-strings.c */
 
+/* util-prop-parsers.c */
+
 /**
  * Parses a simple dimension string in the form of "10x40". The two
  * numbers must be positive integers in decimal notation.
@@ -417,3 +419,5 @@ out:
 	strv_free(strv);
 	return rc;
 }
+
+/* !util-prop-parsers.c */
