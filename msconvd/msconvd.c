@@ -38,7 +38,7 @@
  **
  ** Mouse daemon : listens to a serial port, the bus mouse interface, or
  ** the PS/2 mouse port for mouse data stream, interprets data and passes
- ** ioctls off to the console driver.
+ ** writes off to the uinput driver.
  **
  ** The mouse interface functions are derived closely from the mouse
  ** handler in the XFree86 X server.  Many thanks to the XFree86 people
@@ -54,10 +54,14 @@
 #include <sys/time.h>
 #include <sys/un.h>
 
+#include <dev/evdev/input.h>
+#include <dev/evdev/uinput.h>
+
 #include <ctype.h>
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <libgen.h>
 #include <libutil.h>
 #include <limits.h>
 #include <setjmp.h>
@@ -381,6 +385,18 @@ static unsigned short rodentcflags[] =
     (CS8		   | CREAD |	      HUPCL ),	/* GTCO Digi-Pad */
 };
 
+/* evdev button codes */
+static const int16_t evdev_buttons[8] = {
+	BTN_LEFT,
+	BTN_MIDDLE,
+	BTN_RIGHT,
+	BTN_SIDE,
+	BTN_EXTRA,
+	BTN_FORWARD,
+	BTN_BACK,
+	BTN_TASK
+};
+
 static struct rodentparam {
     int flags;
     const char *portname;	/* /dev/XXX */
@@ -392,7 +408,7 @@ static struct rodentparam {
     int zmap[4];		/* MOUSE_{X|Y}AXIS or a button number */
     int wmode;			/* wheel mode button number */
     int mfd;			/* mouse file descriptor */
-    int cfd;			/* /dev/consolectl file descriptor */
+    int ufd;			/* /dev/uinput file descriptor */
     int mremsfd;		/* mouse remote server file descriptor */
     int mremcfd;		/* mouse remote client file descriptor */
     int is_removable;		/* set if device is removable, like USB */
@@ -419,7 +435,7 @@ static struct rodentparam {
     .zmap = { 0, 0, 0, 0 },
     .wmode = 0,
     .mfd = -1,
-    .cfd = -1,
+    .ufd = -1,
     .mremsfd = -1,
     .mremcfd = -1,
     .is_removable = 0,
@@ -524,6 +540,8 @@ static void	usage(void);
 static void	log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 		    __printflike(3, 4);
 
+static int	r_uinput_register(void);
+static int	r_uinput_report(int fd, mousestatus_t *act);
 static int	r_identify(void);
 static const char *r_if(int type);
 static const char *r_name(int type);
@@ -913,9 +931,9 @@ main(int argc, char *argv[])
 
 	if (rodent.mfd != -1)
 	    close(rodent.mfd);
-	if (rodent.cfd != -1)
-	    close(rodent.cfd);
-	rodent.mfd = rodent.cfd = -1;
+	if (rodent.ufd != -1)
+	    close(rodent.ufd);
+	rodent.mfd = rodent.ufd = -1;
 	if (rodent.is_removable)
 		exit(0);
     }
@@ -1000,8 +1018,8 @@ moused(void)
     int c;
     int i;
 
-    if ((rodent.cfd = open("/dev/consolectl", O_RDWR, 0)) == -1)
-	logerr(1, "cannot open /dev/consolectl");
+    if ((rodent.ufd = r_uinput_register()) == -1)
+	logerr(1, "cannot register uinput device");
 
     if (!nodaemon && !background) {
 	pfh = pidfile_open(pidfile, 0600, &mpid);
@@ -1037,10 +1055,6 @@ moused(void)
 	zstate[i].count = 0;
 	zstate[i].ts = mouse_button_state_ts;
     }
-
-    /* choose which ioctl command to use */
-    mouse.operation = MOUSE_MOTION_EVENT;
-    extioctl = (ioctl(rodent.cfd, CONS_MOUSECTL, &mouse) == 0);
 
     /* process mouse data */
     timeout.tv_sec = 0;
@@ -1148,6 +1162,13 @@ moused(void)
 	flags &= MOUSE_POSCHANGED;
 	flags |= action.obutton ^ action.button;
 	action.flags = flags;
+
+	if (flags) {
+	    if (r_uinput_report(rodent.ufd, &action) == -1) {
+	        logwarn("failed to write to uinput");
+	        return;
+	    }
+	}
 
 	if (flags) {			/* handler detected action */
 	    r_map(&action, &action2);
@@ -1270,9 +1291,9 @@ moused(void)
 			    &mouse.u.data.x, &mouse.u.data.y);
 		    }
 		    mouse.u.data.z = action2.dz;
-		    if (debug < 2)
-			if (!paused)
-				ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
+//		    if (debug < 2)
+//			if (!paused)
+//				ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
 		}
 	    } else {
 		mouse.operation = MOUSE_ACTION;
@@ -1286,9 +1307,9 @@ moused(void)
 			&mouse.u.data.x, &mouse.u.data.y);
 		}
 		mouse.u.data.z = action2.dz;
-		if (debug < 2)
-		    if (!paused)
-			ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
+//		if (debug < 2)
+//		    if (!paused)
+//			ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
 	    }
 
 	    /*
@@ -1309,9 +1330,9 @@ moused(void)
 		    mouse.operation = MOUSE_ACTION;
 		    mouse.u.data.buttons = action2.button;
 		    mouse.u.data.x = mouse.u.data.y = mouse.u.data.z = 0;
-		    if (debug < 2)
-			if (!paused)
-			    ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
+//		    if (debug < 2)
+//			if (!paused)
+//			    ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
 		}
 	    }
 	}
@@ -1378,6 +1399,97 @@ log_or_warn(int log_pri, int errnum, const char *fmt, ...)
 		syslog(log_pri, "%s", buf);
 	else
 		warnx("%s", buf);
+}
+
+/*
+ * Setup uinput device as 8button mouse with wheel
+ */
+static int
+r_uinput_register(void)
+{
+	struct uinput_setup	uisetup;
+	char			*phys;
+	int			fd;
+	size_t			i;
+
+	fd = open("/dev/uinput", O_RDWR | O_NONBLOCK);
+	if (fd < 0)
+		return (-1);
+
+	/* Set device name and bus/vendor information */
+	memset(&uisetup, 0, sizeof(uisetup));
+	strlcpy(uisetup.name, rodent.portname, UINPUT_MAX_NAME_SIZE);
+	uisetup.id.bustype = BUS_VIRTUAL;
+	uisetup.id.vendor  = 0;
+	uisetup.id.product = 0;
+	uisetup.id.version = 0;
+	phys = basename(__DECONST(char *, rodent.portname));
+	if (ioctl(fd, UI_SET_PHYS, phys) < 0 ||
+	    ioctl(fd, UI_DEV_SETUP, &uisetup) < 0)
+		goto bail_out;
+
+	/* Advertise events and axes */
+	if (ioctl(fd, UI_SET_EVBIT, EV_SYN) < 0 ||
+	    ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0 ||
+	    ioctl(fd, UI_SET_EVBIT, EV_REL) < 0 ||
+	    ioctl(fd, UI_SET_RELBIT, REL_X) < 0 ||
+	    ioctl(fd, UI_SET_RELBIT, REL_Y) < 0 ||
+	    ioctl(fd, UI_SET_RELBIT, REL_WHEEL) < 0 ||
+	    ioctl(fd, UI_SET_PROPBIT, INPUT_PROP_POINTER) < 0)
+		goto bail_out;
+
+	/* Advertise mouse buttons */
+	for (i = 0; i < nitems(evdev_buttons); i++)
+		if (ioctl(fd, UI_SET_KEYBIT, evdev_buttons[i]) < 0)
+			goto bail_out;
+
+	if (ioctl(fd, UI_DEV_CREATE) >= 0)
+		return (fd); /* SUCCESS */
+
+bail_out:
+	close (fd);
+	return (-1);
+}
+
+static int
+uinput_event(int fd, uint16_t type, uint16_t code, int32_t value)
+{
+	struct input_event ie;
+
+	if (debug >= 2 || paused)
+		return (0);
+
+	memset(&ie, 0, sizeof(ie));
+	ie.type = type;
+	ie.code = code;
+	ie.value = value;
+	return (write(fd, &ie, sizeof(ie)));
+}
+
+static int
+r_uinput_report(int fd, mousestatus_t *act)
+{
+	size_t i;
+	int32_t mask;
+
+	if ((act->dx != 0 && uinput_event(fd, EV_REL, REL_X, act->dx) < 0) ||
+	    (act->dy != 0 && uinput_event(fd, EV_REL, REL_Y, act->dy) < 0) ||
+	    (act->dz != 0 && uinput_event(fd, EV_REL, REL_WHEEL, -act->dz) < 0))
+		return (-1);
+
+	for (i = 0; i < nitems(evdev_buttons); i++) {
+		mask = 1 << i;
+		if ((act->button & mask) == (act->obutton & mask))
+			continue;
+		if (uinput_event(fd, EV_KEY, evdev_buttons[i],
+		    (act->button & mask) != 0) < 0)
+			return (-1);
+	}
+
+	if (uinput_event(fd, EV_SYN, SYN_REPORT, 0) < 0)
+		return (-1);
+
+	return (0);
 }
 
 /**
@@ -2609,9 +2721,9 @@ r_click(mousestatus_t *act)
 	    }
 	    mouse.operation = MOUSE_BUTTON_EVENT;
 	    mouse.u.event.id = button;
-	    if (debug < 2)
-		if (!paused)
-		    ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
+//	    if (debug < 2)
+//		if (!paused)
+//		    ioctl(rodent.cfd, CONS_MOUSECTL, &mouse);
 	    debug("button %d  count %d", i + 1, mouse.u.event.value);
 	}
 	button <<= 1;
