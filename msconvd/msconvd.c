@@ -154,10 +154,10 @@ static struct pidfh *pfh;
 
 /* interface (the table must be ordered by MOUSE_IF_XXX in mouse.h) */
 static symtab_t rifs[] = {
-    { "serial",		MOUSE_IF_SERIAL,	0 },
-    { "ps/2",		MOUSE_IF_PS2,		0 },
-    { "sysmouse",	MOUSE_IF_SYSMOUSE,	0 },
-    { "usb",		MOUSE_IF_USB,		0 },
+    { "serial",		MOUSE_IF_SERIAL,	BUS_RS232 },
+    { "ps/2",		MOUSE_IF_PS2,		BUS_I8042 },
+    { "sysmouse",	MOUSE_IF_SYSMOUSE,	BUS_VIRTUAL },
+    { "usb",		MOUSE_IF_USB,		BUS_USB },
     { NULL,		MOUSE_IF_UNKNOWN,	0 },
 };
 
@@ -399,6 +399,7 @@ static int	r_uinput_register(void);
 static int	r_uinput_report(int fd, mousestatus_t *act);
 static int	r_identify(void);
 static const char *r_if(int type);
+static uint16_t	r_bustype(int type);
 static const char *r_name(int type);
 static const char *r_model(int model);
 static void	r_init(void);
@@ -413,6 +414,7 @@ static symtab_t	*pnpproto(pnpid_t *id);
 
 static symtab_t	*gettoken(symtab_t *tab, const char *s, int len);
 static const char *gettokenname(symtab_t *tab, int val);
+static int	gettokenval2(symtab_t *tab, int val);
 
 static void	mremote_serversetup(void);
 static void	mremote_clientchg(bool add);
@@ -795,8 +797,9 @@ r_uinput_register(void)
 
 	/* Set device name and bus/vendor information */
 	memset(&uisetup, 0, sizeof(uisetup));
-	strlcpy(uisetup.name, rodent.portname, UINPUT_MAX_NAME_SIZE);
-	uisetup.id.bustype = BUS_VIRTUAL;
+	snprintf(uisetup.name, UINPUT_MAX_NAME_SIZE,
+	    "%s mouse on %s", r_model(rodent.hw.model), rodent.portname);
+	uisetup.id.bustype = r_bustype(rodent.hw.iftype);
 	uisetup.id.vendor  = 0;
 	uisetup.id.product = 0;
 	uisetup.id.version = 0;
@@ -1046,6 +1049,12 @@ r_if(int iftype)
 {
 
     return (gettokenname(rifs, iftype));
+}
+
+static uint16_t
+r_bustype(int iftype)
+{
+    return (gettokenval2(rifs, iftype));
 }
 
 static const char *
@@ -2351,6 +2360,18 @@ gettokenname(symtab_t *tab, int val)
 	    return (tab[i].name);
     }
     return (unknown);
+}
+
+static int
+gettokenval2(symtab_t *tab, int val)
+{
+    int i;
+
+    for (i = 0; tab[i].name != NULL; ++i) {
+	if (tab[i].val == val)
+	    return (tab[i].val2);
+    }
+    return (0);
 }
 
 
