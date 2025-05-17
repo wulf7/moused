@@ -67,6 +67,7 @@
 #include <setjmp.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -75,9 +76,6 @@
 #include <termios.h>
 #include <unistd.h>
 #include <math.h>
-
-#define TRUE		1
-#define FALSE		0
 
 /* Logitech PS2++ protocol */
 #define MOUSE_PS2PLUS_CHECKBITS(b)	\
@@ -145,9 +143,9 @@ typedef struct {
 /* global variables */
 
 static int	debug = 0;
-static int	nodaemon = FALSE;
-static int	background = FALSE;
-static int	paused = FALSE;
+static bool	nodaemon = false;
+static bool	background = false;
+static bool	paused = false;
 static int	identify = ID_NONE;
 static const char *pidfile = "/var/run/moused.pid";
 static struct pidfh *pfh;
@@ -405,20 +403,20 @@ static const char *r_name(int type);
 static const char *r_model(int model);
 static void	r_init(void);
 static int	r_protocol(u_char b, mousestatus_t *act);
-static int	r_statetrans(mousestatus_t *a1, mousestatus_t *a2);
+static void	r_statetrans(mousestatus_t *a1, mousestatus_t *a2);
 static void	setmousespeed(int old, int new, unsigned cflag);
 
-static int	pnpwakeup1(void);
-static int	pnpwakeup2(void);
+static bool	pnpwakeup1(void);
+static bool	pnpwakeup2(void);
 static int	pnpgets(char *buf);
-static int	pnpparse(pnpid_t *id, char *buf, int len);
+static bool	pnpparse(pnpid_t *id, char *buf, int len);
 static symtab_t	*pnpproto(pnpid_t *id);
 
 static symtab_t	*gettoken(symtab_t *tab, const char *s, int len);
 static const char *gettokenname(symtab_t *tab, int val);
 
 static void	mremote_serversetup(void);
-static void	mremote_clientchg(int add);
+static void	mremote_clientchg(bool add);
 
 static int	kidspad(u_char rxc, mousestatus_t *act);
 static int	gtco_digipad(u_char, mousestatus_t *);
@@ -441,7 +439,7 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'f':
-	    nodaemon = TRUE;
+	    nodaemon = true;
 	    break;
 
 	case 'i':
@@ -459,7 +457,7 @@ main(int argc, char *argv[])
 		warnx("invalid argument `%s'", optarg);
 		usage();
 	    }
-	    nodaemon = TRUE;
+	    nodaemon = true;
 	    break;
 
 	case 'l':
@@ -668,7 +666,7 @@ moused(void)
 	    errno = saved_errno;
 	    logerr(1, "failed to become a daemon");
 	} else {
-	    background = TRUE;
+	    background = true;
 	    pidfile_write(pfh);
 	}
     }
@@ -694,11 +692,11 @@ moused(void)
 	} else {
 	    /*  MouseRemote client connect/disconnect  */
 	    if ((rodent.mremsfd >= 0) && FD_ISSET(rodent.mremsfd, &fds)) {
-		mremote_clientchg(TRUE);
+		mremote_clientchg(true);
 		continue;
 	    }
 	    if ((rodent.mremcfd >= 0) && FD_ISSET(rodent.mremcfd, &fds)) {
-		mremote_clientchg(FALSE);
+		mremote_clientchg(false);
 		continue;
 	    }
 	    /* mouse movement */
@@ -1375,7 +1373,7 @@ r_protocol(u_char rBuf, mousestatus_t *act)
     static int           pBufP = 0;
     static unsigned char pBuf[8];
     static int		 prev_x, prev_y;
-    static int		 on = FALSE;
+    static bool		 on = false;
     int			 x, y;
 
     debug("received char 0x%x",(int)rBuf);
@@ -1609,7 +1607,7 @@ r_protocol(u_char rBuf, mousestatus_t *act)
 	act->button |= (pBuf[0] & MOUSE_VERSA_TAP) ? MOUSE_BUTTON4DOWN : 0;
 	act->dx = act->dy = 0;
 	if (!(pBuf[0] & MOUSE_VERSA_IN_USE)) {
-	    on = FALSE;
+	    on = false;
 	    break;
 	}
 	x = (pBuf[2] << 6) | pBuf[1];
@@ -1622,7 +1620,7 @@ r_protocol(u_char rBuf, mousestatus_t *act)
 	    act->dx = prev_x - x;
 	    act->dy = prev_y - y;
 	} else {
-	    on = TRUE;
+	    on = true;
 	}
 	prev_x = x;
 	prev_y = y;
@@ -1745,7 +1743,7 @@ r_protocol(u_char rBuf, mousestatus_t *act)
 		(pBuf[0] & MOUSE_PS2VERSA_TAP) ? MOUSE_BUTTON4DOWN : 0;
 	    act->dx = act->dy = 0;
 	    if (!(pBuf[0] & MOUSE_PS2VERSA_IN_USE)) {
-		on = FALSE;
+		on = false;
 		break;
 	    }
 	    x = ((pBuf[4] << 8) & 0xf00) | pBuf[1];
@@ -1758,7 +1756,7 @@ r_protocol(u_char rBuf, mousestatus_t *act)
 		act->dx = prev_x - x;
 		act->dy = prev_y - y;
 	    } else {
-		on = TRUE;
+		on = true;
 	    }
 	    prev_x = x;
 	    prev_y = y;
@@ -1824,20 +1822,17 @@ r_protocol(u_char rBuf, mousestatus_t *act)
     return (act->flags);
 }
 
-static int
+static void
 r_statetrans(mousestatus_t *a1, mousestatus_t *a2)
 {
-    int changed;
-
     a2->dx = a1->dx;
     a2->dy = a1->dy;
     a2->dz = a1->dz;
     a2->obutton = a2->button;
     a2->button = a1->button;
     a2->flags = a1->flags;
-    changed = FALSE;
 
-    return (changed);
+    return;
 }
 
 /* $XConsortium: posix_tty.c,v 1.3 95/01/05 20:42:55 kaleb Exp $ */
@@ -1974,7 +1969,7 @@ setmousespeed(int old, int new, unsigned cflag)
  * revisions of the above spec. may fail to respond if the rev 1.0
  * procedure is used. XXX
  */
-static int
+static bool
 pnpwakeup1(void)
 {
     struct timeval timeout;
@@ -2004,7 +1999,7 @@ pnpwakeup1(void)
     ioctl(rodent.mfd, TIOCMGET, &i);
     debug("modem status 0%o", i);
     if ((i & TIOCM_DSR) == 0)
-	return (FALSE);
+	return (false);
 
     /* port setup, 1st phase (2.1.3) */
     setmousespeed(1200, 1200, (CS7 | CREAD | CLOCAL | HUPCL));
@@ -2028,7 +2023,7 @@ pnpwakeup1(void)
     timeout.tv_usec = 240000;
     if (select(FD_SETSIZE, &fds, NULL, NULL, &timeout) > 0) {
 	debug("pnpwakeup1(): valid response in first phase.");
-	return (TRUE);
+	return (true);
     }
 
     /* port setup, 2nd phase (2.1.5) */
@@ -2049,13 +2044,13 @@ pnpwakeup1(void)
     timeout.tv_usec = 240000;
     if (select(FD_SETSIZE, &fds, NULL, NULL, &timeout) > 0) {
 	debug("pnpwakeup1(): valid response in second phase.");
-	return (TRUE);
+	return (true);
     }
 
-    return (FALSE);
+    return (false);
 }
 
-static int
+static bool
 pnpwakeup2(void)
 {
     struct timeval timeout;
@@ -2088,10 +2083,10 @@ pnpwakeup2(void)
     timeout.tv_usec = 240000;
     if (select(FD_SETSIZE, &fds, NULL, NULL, &timeout) > 0) {
 	debug("pnpwakeup2(): valid response.");
-	return (TRUE);
+	return (true);
     }
 
-    return (FALSE);
+    return (false);
 }
 
 static int
@@ -2172,7 +2167,7 @@ connect_idle:
     return (MAX(i, 0));
 }
 
-static int
+static bool
 pnpparse(pnpid_t *id, char *buf, int len)
 {
     char s[3];
@@ -2196,7 +2191,7 @@ pnpparse(pnpid_t *id, char *buf, int len)
 	/* non-PnP mice */
 	switch(buf[0]) {
 	default:
-	    return (FALSE);
+	    return (false);
 	case 'M': /* Microsoft */
 	    id->eisaid = "PNP0F01";
 	    break;
@@ -2208,7 +2203,7 @@ pnpparse(pnpid_t *id, char *buf, int len)
 	id->class = "MOUSE";
 	id->nclass = strlen(id->class);
 	debug("non-PnP mouse '%c'", buf[0]);
-	return (TRUE);
+	return (true);
     }
 
     /* PnP mice */
@@ -2307,12 +2302,12 @@ pnpparse(pnpid_t *id, char *buf, int len)
 	     * spec regarding checksum... XXX
 	     */
 	    logwarnx("PnP checksum error", 0);
-	    return (FALSE);
+	    return (false);
 #endif
 	}
     }
 
-    return (TRUE);
+    return (true);
 }
 
 static symtab_t *
@@ -2576,7 +2571,7 @@ mremote_serversetup(void)
 }
 
 static void
-mremote_clientchg(int add)
+mremote_clientchg(bool add)
 {
     struct sockaddr_un ad;
     socklen_t ad_len;
