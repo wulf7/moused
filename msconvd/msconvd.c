@@ -403,7 +403,6 @@ static const char *r_name(int type);
 static const char *r_model(int model);
 static void	r_init(void);
 static int	r_protocol(u_char b, mousestatus_t *act);
-static void	r_statetrans(mousestatus_t *a1, mousestatus_t *a2);
 static void	setmousespeed(int old, int new, unsigned cflag);
 
 static bool	pnpwakeup1(void);
@@ -642,8 +641,7 @@ main(int argc, char *argv[])
 static void
 moused(void)
 {
-    mousestatus_t action0;		/* original mouse action */
-    mousestatus_t action;		/* interim buffer */
+    mousestatus_t action;		/* mouse action */
     fd_set fds;
     u_char b;
     pid_t mpid;
@@ -672,7 +670,6 @@ moused(void)
     }
 
     /* clear mouse data */
-    bzero(&action0, sizeof(action0));
     bzero(&action, sizeof(action));
 
     /* process mouse data */
@@ -689,34 +686,28 @@ moused(void)
 	if (c < 0) {                    /* error */
 	    logwarn("failed to read from mouse");
 	    continue;
-	} else {
-	    /*  MouseRemote client connect/disconnect  */
-	    if ((rodent.mremsfd >= 0) && FD_ISSET(rodent.mremsfd, &fds)) {
-		mremote_clientchg(true);
-		continue;
-	    }
-	    if ((rodent.mremcfd >= 0) && FD_ISSET(rodent.mremcfd, &fds)) {
-		mremote_clientchg(false);
-		continue;
-	    }
-	    /* mouse movement */
-	    if (read(rodent.mfd, &b, 1) == -1) {
-		if (errno == EWOULDBLOCK)
-		    continue;
-		else
-		    return;
-	    }
-	    if ((flags = r_protocol(b, &action0)) == 0)
-		continue;
-
-	    r_statetrans(&action0, &action);
-	    debug("flags:%08x buttons:%08x obuttons:%08x", action.flags,
-		  action.button, action.obutton);
 	}
-	action0.obutton = action0.button;
-	flags &= MOUSE_POSCHANGED;
-	flags |= action.obutton ^ action.button;
-	action.flags = flags;
+	/*  MouseRemote client connect/disconnect  */
+	if ((rodent.mremsfd >= 0) && FD_ISSET(rodent.mremsfd, &fds)) {
+	    mremote_clientchg(true);
+	    continue;
+	}
+	if ((rodent.mremcfd >= 0) && FD_ISSET(rodent.mremcfd, &fds)) {
+	    mremote_clientchg(false);
+	    continue;
+	}
+	/* mouse movement */
+	if (read(rodent.mfd, &b, 1) == -1) {
+	    if (errno == EWOULDBLOCK)
+		continue;
+	    else
+		return;
+	}
+	if ((flags = r_protocol(b, &action)) == 0)
+	    continue;
+
+	debug("flags:%08x buttons:%08x obuttons:%08x", action.flags,
+	    action.button, action.obutton);
 
 	if (flags) {
 	    if (r_uinput_report(rodent.ufd, &action) == -1) {
@@ -1820,19 +1811,6 @@ r_protocol(u_char rBuf, mousestatus_t *act)
 	| (act->obutton ^ act->button);
 
     return (act->flags);
-}
-
-static void
-r_statetrans(mousestatus_t *a1, mousestatus_t *a2)
-{
-    a2->dx = a1->dx;
-    a2->dy = a1->dy;
-    a2->dz = a1->dz;
-    a2->obutton = a2->button;
-    a2->button = a1->button;
-    a2->flags = a1->flags;
-
-    return;
 }
 
 /* $XConsortium: posix_tty.c,v 1.3 95/01/05 20:42:55 kaleb Exp $ */
