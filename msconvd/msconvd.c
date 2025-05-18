@@ -75,7 +75,6 @@
 #include <syslog.h>
 #include <termios.h>
 #include <unistd.h>
-#include <math.h>
 
 /* Logitech PS2++ protocol */
 #define MOUSE_PS2PLUS_CHECKBITS(b)	\

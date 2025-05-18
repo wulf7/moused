@@ -6,7 +6,7 @@ LOCALBASE?=     /usr/local
 PREFIX?=        ${LOCALBASE}
 
 SRCS=           ${PROG}.c
-LDADD=          -lm -lutil
+LDADD=		-lutil
 BINDIR?=        ${PREFIX}/sbin
 
 MAN=            ${PROG}.8
