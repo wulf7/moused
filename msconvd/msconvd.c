@@ -34,10 +34,10 @@
  **/
 
 /**
- ** MOUSED.C
+ ** MSCONVD.C
  **
- ** Mouse daemon : listens to a serial port, the bus mouse interface, or
- ** the PS/2 mouse port for mouse data stream, interprets data and passes
+ ** Mouse protocol conversion daemon : listens to a serial port or
+ ** the PS/2 mouse port for mouse data stream, decodes data and passes
  ** writes off to the uinput driver.
  **
  ** The mouse interface functions are derived closely from the mouse
@@ -146,7 +146,7 @@ static bool	nodaemon = false;
 static bool	background = false;
 static bool	paused = false;
 static int	identify = ID_NONE;
-static const char *pidfile = "/var/run/moused.pid";
+static const char *pidfile = "/var/run/msconvd.pid";
 static struct pidfh *pfh;
 
 /* local variables */
@@ -386,7 +386,7 @@ static jmp_buf env;
 
 /* function prototypes */
 
-static void	moused(void);
+static void	msconvd(void);
 static void	hup(int sig);
 static void	cleanup(int sig);
 static void	pause_mouse(int sig);
@@ -623,7 +623,7 @@ main(int argc, char *argv[])
 	    }
 
 	    r_init();			/* call init function */
-	    moused();
+	    msconvd();
 	}
 
 	if (rodent.mfd != -1)
@@ -640,7 +640,7 @@ main(int argc, char *argv[])
 }
 
 static void
-moused(void)
+msconvd(void)
 {
     mousestatus_t action;		/* mouse action */
     fd_set fds;
@@ -656,7 +656,7 @@ moused(void)
 	pfh = pidfile_open(pidfile, 0600, &mpid);
 	if (pfh == NULL) {
 	    if (errno == EEXIST)
-		logerrx(1, "moused already running, pid: %d", mpid);
+		logerrx(1, "msconvd already running, pid: %d", mpid);
 	    logwarn("cannot open pid file");
 	}
 	if (daemon(0, 0)) {
@@ -749,9 +749,9 @@ static void
 usage(void)
 {
     fprintf(stderr, "%s\n%s\n%s\n",
-	"usage: moused [-DPRcdfs] [-I file] [-F rate] [-r resolution] [-S baudrate]",
-	"              [-t <mousetype>] [-l level] -p <port>",
-	"       moused [-Pd] -i <port|if|type|model|all> -p <port>");
+	"usage: msconvd [-DPRcdfs] [-I file] [-F rate] [-r resolution] [-S baudrate]",
+	"               [-t <mousetype>] [-l level] -p <port>",
+	"       msconvd [-Pd] -i <port|if|type|model|all> -p <port>");
     exit(1);
 }
 
@@ -1947,7 +1947,7 @@ setmousespeed(int old, int new, unsigned cflag)
  * The routine does not fully implement the COM Enumerator as par Section
  * 2.1 of the document.  In particular, we don't have idle state in which
  * the driver software monitors the com port for dynamic connection or
- * removal of a device at the port, because `moused' simply quits if no
+ * removal of a device at the port, because `msconvd' simply quits if no
  * device is found.
  *
  * In addition, as PnP COM device enumeration procedure slightly has
@@ -2087,7 +2087,7 @@ pnpgets(char *buf)
     if (!pnpwakeup1() && !pnpwakeup2()) {
 	/*
 	 * According to PnP spec, we should set DTR = 1 and RTS = 0 while
-	 * in idle state.  But, `moused' shall set DTR = RTS = 1 and proceed,
+	 * in idle state.  But, `msconvd' shall set DTR = RTS = 1 and proceed,
 	 * assuming there is something at the port even if it didn't
 	 * respond to the PnP enumeration procedure.
 	 */
@@ -2144,7 +2144,7 @@ pnpgets(char *buf)
 
     /*
      * According to PnP spec, we should set DTR = 1 and RTS = 0 while
-     * in idle state.  But, `moused' shall leave the modem control lines
+     * in idle state.  But, `msconvd' shall leave the modem control lines
      * as they are. See above.
      */
 connect_idle:
