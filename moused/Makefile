@@ -27,11 +27,7 @@ BINDIR?=	${PREFIX}/sbin
 MAN=		moused.8
 MANDIR?=	${PREFIX}/share/man/man
 
-CONFGROUPS=	DEVD MOUSED RC
-
-DEVD=		devd.conf
-DEVDNAME=	moused.conf
-DEVDDIR=	${PREFIX}/etc/devd
+CONFGROUPS=	MOUSED RC
 
 MOUSED=		moused.conf
 MOUSEDDIR=	${PREFIX}/etc
