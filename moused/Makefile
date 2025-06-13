@@ -24,7 +24,8 @@ CFLAGS+=	-DCONFDIR=\"${MOUSEDDIR}\" -DQUIRKSDIR=\"${FILESDIR}\"
 LDADD=		-lm -lutil
 BINDIR?=	${PREFIX}/sbin
 
-MAN=		moused.8
+MAN=		moused.8 \
+		moused.conf.5
 MANDIR?=	${PREFIX}/share/man/man
 
 CONFGROUPS=	MOUSED RC
