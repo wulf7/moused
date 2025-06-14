@@ -1,5 +1,7 @@
-.\" Copyright (c) 1996
-.\"	Mike Pritchard <mpp@FreeBSD.org>.  All rights reserved.
+.\" SPDX-License-Identifier: BSD-4-Clause
+.\"
+.\" Copyright (c) 1996 Mike Pritchard <mpp@FreeBSD.org>
+.\" All rights reserved.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
 .\" modification, are permitted provided that the following conditions
@@ -28,9 +30,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.\" $FreeBSD$
-.\"
-.Dd June 3, 2018
+.Dd June 14, 2025
 .Dt MOUSED 8
 .Os
 .Sh NAME
@@ -71,6 +71,11 @@ in the standard format
 .Pp
 The mouse daemon listens to the specified port for mouse data,
 interprets and then passes it via ioctls to the console driver.
+Supported data interfaces are
+.Qq input event device
+AKA evdev and
+.Xr sysmouse 4
+level 1.
 The mouse daemon
 reports translation movement, button press/release
 events and movement of the roller or the wheel if available.
@@ -128,7 +133,9 @@ msec at most before deciding whether two buttons are being pressed
 simultaneously.
 The default timeout is 100 msec.
 .It Fl F Ar rate
-Only for sysmouse interface.
+Only for
+.Xr sysmouse 4
+interface.
 Set the report rate (reports/sec) of the device if supported.
 .It Fl L Ar distance
 When
@@ -311,7 +318,9 @@ Use
 .Ar port
 to communicate with the mouse.
 .It Fl r Ar resolution
-Only for sysmouse interface.
+Only for
+.Xr sysmouse 4
+interface.
 Set the resolution of the device; in Dots Per Inch, or
 .Ar low ,
 .Ar medium-low ,
@@ -392,230 +401,80 @@ Moreover, there are some mice whose two wheels are both mounted vertically,
 and the direction of the second vertical wheel does not match the
 first one.
 .El
-.El
-.Ss Configuring Mouse Daemon
-The first thing you need to know is the interface type
-of the mouse you are going to use.
-It can be determined by looking at the connector of the mouse.
-The serial mouse has a D-Sub female 9- or 25-pin connector.
-The bus and InPort mice have either a D-Sub male 9-pin connector
-or a round DIN 9-pin connector.
-The PS/2 mouse is equipped with a small, round DIN 6-pin connector.
-Some mice come with adapters with which the connector can
-be converted to another.
-If you are to use such an adapter,
-remember the connector at the very end of the mouse/adapter pair is
-what matters.
-The USB mouse has a flat rectangular connector.
-.Pp
-The next thing to decide is a port to use for the given interface.
-The PS/2 mouse is always at
-.Pa /dev/psm0 .
-There may be more than one serial port to which the serial
-mouse can be attached.
-Many people often assign the first, built-in
-serial port
-.Pa /dev/cuau0
-to the mouse.
-You can attach multiple USB mice to your system or to your USB hub.
-They are accessible as
-.Pa /dev/ums0 , /dev/ums1 ,
-and so on.
-.Pp
-You may want to create a symbolic link
-.Pa /dev/mouse
-pointing to the real port to which the mouse is connected, so that you
-can easily distinguish which is your
-.Dq mouse
-port later.
-.Pp
-The next step is to guess the appropriate protocol type for the mouse.
-The
-.Nm
-utility may be able to automatically determine the protocol type.
-Run the
-.Nm
-utility with the
-.Fl i
-option and see what it says.
-If the command can identify
-the protocol type, no further investigation is necessary on your part.
-You may start the daemon without explicitly specifying a protocol type
-(see
-.Sx EXAMPLES ) .
-.Pp
-The command may print
-.Ar sysmouse
-if the mouse driver supports this protocol type.
-.Pp
-Note that the
-.Dv type
-and
-.Dv model
-printed by the
-.Fl i
-option do not necessarily match the product name of the pointing device
-in question, but they may give the name of the device with which it is
-compatible.
-.Pp
-If the
-.Fl i
-option yields nothing, you need to specify a protocol type to the
-.Nm
-utility by the
-.Fl t
-option.
-You have to make a guess and try.
-There is rule of thumb:
-.Pp
-.Bl -enum -compact -width 1.X
-.It
-The
-.Ar ps/2
-protocol should always be specified for the PS/2 mouse
-regardless of the brand of the mouse.
-.It
-You must specify the
-.Ar auto
-protocol for the USB mouse.
-.It
-Most 2-button serial mice support the
-.Ar microsoft
-protocol.
-.It
-3-button serial mice may work with the
-.Ar mousesystems
-protocol.
-If it does not, it may work with the
-.Ar microsoft
-protocol although
-the third (middle) button will not function.
-3-button serial mice may also work with the
-.Ar mouseman
-protocol under which the third button may function as expected.
-.It
-3-button serial mice may have a small switch to choose between
-.Dq MS
-and
-.Dq PC ,
-or
-.Dq 2
-and
-.Dq 3 .
-.Dq MS
-or
-.Dq 2
-usually mean the
-.Ar microsoft
-protocol.
-.Dq PC
-or
-.Dq 3
-will choose the
-.Ar mousesystems
-protocol.
-.It
-If the mouse has a roller or a wheel, it may be compatible with the
-.Ar intellimouse
-protocol.
-.El
-.Pp
-To test if the selected protocol type is correct for the given mouse,
-enable the mouse pointer in the current virtual console,
-.Pp
-.Dl "vidcontrol -m on"
-.Pp
-start the mouse daemon in the foreground mode,
-.Pp
-.Dl "moused -f -p <selected_port> -t <selected_protocol>"
-.Pp
-and see if the mouse pointer travels correctly
-according to the mouse movement.
-Then try cut & paste features by
-clicking the left, right and middle buttons.
-Type ^C to stop
-the command.
 .Ss Multiple Mice
-As many instances of the mouse daemon as the number of mice attached to
-the system may be run simultaneously; one
-instance for each mouse.
-This is useful if the user wants to use the built-in PS/2 pointing device
-of a laptop computer while on the road, but wants to use a serial
-mouse when s/he attaches the system to the docking station in the office.
-Run two mouse daemons and tell the application program
-(such as the
-.Tn "X\ Window System" )
-to use
-.Xr sysmouse 4 ,
-then the application program will always see mouse data from either mouse.
-When the serial mouse is not attached, the corresponding mouse daemon
-will not detect any movement or button state change and the application
-program will only see mouse data coming from the daemon for the
-PS/2 mouse.
-In contrast when both mice are attached and both of them
-are moved at the same time in this configuration,
-the mouse pointer will travel across the screen just as if movement of
-the mice is combined all together.
+The
+.Nm
+utility may operate in 2 different modes depending on the value of
+.Fl p
+option.
+When started with
+.Fl p Ar auto
+option specified the
+.Nm
+handles all recognized pointing devices in a single instance.
+Device hotplug is supported through
+.Xr devd 8 .
+Only evdev interface is available in this mode.
+When started with
+.Fl p Ar <selected_port>
+option specified the
+.Nm
+handles single device located at
+.Ar <selected_port> .
+Both evdev and
+.Xr sysmouse 4
+level 1 interfaces are available in this mode.
+Multiple
+.Nm
+instances may be run simultaneously.
 .Sh FILES
-.Bl -tag -width /dev/consolectl -compact
+.Bl -tag -width /var/run/moused.pid -compact
 .It Pa /dev/consolectl
 device to control the console
+.It Pa /dev/input/event%d
+Input event device
 .It Pa /dev/psm%d
 PS/2 mouse driver
 .It Pa /dev/sysmouse
 virtualized mouse driver
-.It Pa /dev/ttyv%d
-virtual consoles
 .It Pa /dev/ums%d
 USB mouse driver
 .It Pa /var/run/moused.pid
 process id of the currently running
 .Nm
 utility
-.It Pa /var/run/MouseRemote
-UNIX-domain stream socket for X10 MouseRemote events
 .El
 .Sh EXAMPLES
-.Dl "moused -p /dev/cuau0 -i type"
-.Pp
-Let the
-.Nm
-utility determine the protocol type of the mouse at the serial port
-.Pa /dev/cuau0 .
-If successful, the command will print the type, otherwise it will say
-.Dq Li unknown .
 .Bd -literal -offset indent
-moused -p /dev/cuau0
+moused -p auto
 vidcontrol -m on
 .Ed
 .Pp
-If the
+Start
 .Nm
-utility is able to identify the protocol type of the mouse at the specified
-port automatically, you can start the daemon without the
-.Fl t
-option and enable the mouse pointer in the text console as above.
-.Bd -literal -offset indent
-moused -p /dev/mouse -t microsoft
-vidcontrol -m on
+utility to handle all evdev pointing devices automatically with hotplug
+support.
+And enable the mouse pointer in the text console after than.
+The daemon can be started without the
+.Fl p
+option as well.
+.Pp
+.Dl "moused -f -d -g -p /dev/input/event0"
 .Ed
 .Pp
-Start the mouse daemon on the serial port
-.Pa /dev/mouse .
-The protocol type
-.Ar microsoft
-is explicitly specified by the
-.Fl t
-option.
+Start the mouse daemon on the
+.Pa /dev/input/event0
+in the exclusive foreground debug mode.
+Exclusive mode may disable mouse in Xorg session.
 .Pp
-.Dl "moused -p /dev/mouse -m 1=3 -m 3=1"
+.Dl "moused -p /dev/input/event0 -m 1=3 -m 3=1"
 .Pp
 Assign the physical button 3 (right button) to the logical button 1
 (logical left) and the physical button 1 (left) to the logical
 button 3 (logical right).
 This will effectively swap the left and right buttons.
 .Pp
-.Dl "moused -p /dev/mouse -t intellimouse -z 4"
+.Dl "moused -p /dev/input/event0 -z 4"
 .Pp
 Report negative Z axis movement (i.e., mouse wheel) as the button 4 pressed
 and positive Z axis movement (i.e., mouse wheel) as the button 5 pressed.
@@ -639,49 +498,29 @@ you keep brushing over the mouse pad while typing.
 .Xr xset 1 ,
 .Xr keyboard 4 ,
 .Xr psm 4 ,
-.Xr screen 4 ,
 .Xr sysmouse 4 ,
-.Xr ums 4
-.Sh STANDARDS
-The
-.Nm
-utility partially supports
-.Dq Plug and Play External COM Device Specification
-in order to support PnP serial mice.
-However, due to various degrees of conformance to the specification by
-existing serial mice, it does not strictly follow the version 1.0 of the
-standard.
-Even with this less strict approach,
-it may not always determine an appropriate protocol type
-for the given serial mouse.
+.Xr ums 4 ,
+.Xr devd 8
 .Sh HISTORY
 The
 .Nm
 utility first appeared in
 .Fx 2.2 .
+It was rewriten to support multiple input event devices in
+.Fx 15.0 .
 .Sh AUTHORS
 .An -nosplit
 The
 .Nm
-utility was written by
+utility was originally written by
 .An Michael Smith Aq Mt msmith@FreeBSD.org .
 This manual page was written by
 .An Mike Pritchard Aq Mt mpp@FreeBSD.org .
 The command and manual page have since been updated by
 .An Kazutaka Yokota Aq Mt yokota@FreeBSD.org .
+Multiple input event devices support was added by
+.An Vladimir Kondratyev Aq Mt wulf@FreeBSD.org .
 .Sh CAVEATS
-Many pad devices behave as if the first (left) button were pressed if
-the user
-.Dq taps
-the surface of the pad.
-In contrast, some ALPS GlidePoint and Interlink VersaPad models
-treat the tapping action
-as fourth button events.
-Use the option
-.Dq Fl m Li 1=4
-for these models
-to obtain the same effect as the other pad devices.
-.Pp
 Cut and paste functions in the virtual console assume that there
 are three buttons on the mouse.
 The logical button 1 (logical left) selects a region of text in the
