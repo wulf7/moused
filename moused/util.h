@@ -35,7 +35,7 @@
 
 #define	HAVE_LOCALE_H	1
 
-#define LIBINPUT_ATTRIBUTE_PRINTF(_format, _args) \
+#define MOUSED_ATTRIBUTE_PRINTF(_format, _args) \
 	__attribute__ ((format (printf, _format, _args)))
 
 #define	ARRAY_LENGTH(a) (sizeof (a) / sizeof (a)[0])

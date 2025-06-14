@@ -205,7 +205,7 @@ struct quirks_context {
 	struct list quirks;
 };
 
-LIBINPUT_ATTRIBUTE_PRINTF(3, 0)
+MOUSED_ATTRIBUTE_PRINTF(3, 0)
 static inline void
 quirk_log_msg_va(struct quirks_context *ctx,
 		 enum quirks_log_priorities priority,
@@ -232,7 +232,7 @@ quirk_log_msg_va(struct quirks_context *ctx,
 			 args);
 }
 
-LIBINPUT_ATTRIBUTE_PRINTF(3, 4)
+MOUSED_ATTRIBUTE_PRINTF(3, 4)
 static inline void
 quirk_log_msg(struct quirks_context *ctx,
 	      enum quirks_log_priorities priority,
