@@ -37,6 +37,10 @@ $ sudo make install
 
 and you will get the compiled moused installed in **/usr/local/sbin**.
 
+The above command may be executed from root directory to perform direct
+install or from the **port** directory to install moused through the port
+subsystem and register it as package.
+
 To run **moused** at a boot time, disable system moused in **/etc/rc.conf**
 with
 ```

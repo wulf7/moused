@@ -1,0 +1,9 @@
+@sample %%ETCDIR%%.conf.sample
+etc/rc.d/evdev_moused
+etc/rc.d/msconvd
+sbin/moused
+sbin/msconvd
+share/man/man5/moused.conf.5.gz
+share/man/man8/moused.8.gz
+share/man/man8/msconvd.8.gz
+%%DATADIR%%/10-generic-touchpad.quirks
