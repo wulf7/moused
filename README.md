@@ -36,7 +36,6 @@ $ sudo make install
 ```
 
 and you will get the compiled moused installed in **/usr/local/sbin**.
-You may need to restart devd to apply bundled devd rules.
 
 To run **moused** at a boot time, disable system moused in **/etc/rc.conf**
 with
